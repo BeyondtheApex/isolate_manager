@@ -5,6 +5,7 @@ import 'package:isolate_manager/src/base/contactor/isolate_contactor_controller.
 import 'package:isolate_manager/src/base/contactor/models/isolate_port.dart';
 import 'package:isolate_manager/src/base/contactor/models/isolate_state.dart';
 import 'package:isolate_manager/src/models/isolate_exceptions.dart';
+import 'package:isolate_manager/src/utils/native_transferable_codec.dart';
 import 'package:isolate_manager/src/utils/print.dart';
 import 'package:stream_channel/isolate_channel.dart';
 
@@ -16,18 +17,20 @@ class IsolateContactorControllerImpl<R, P>
     dynamic params, {
     required void Function()? onDispose,
     required R Function(dynamic)? converter,
+    // For internal use only
     // ignore: avoid_unused_constructor_parameters
     required R Function(dynamic)? workerConverter,
     required bool debugMode,
-  })  : _debugMode = debugMode,
-        _onDispose = onDispose,
-        _converter = converter,
-        _initialParams = params is List ? params.first : null,
-        _delegate = params is List
-            ? IsolateChannel.connectSend(params.last as SendPort)
-            : IsolateChannel.connectReceive(params as ReceivePort),
-        _mainStreamController = StreamController<R>.broadcast(),
-        _isolateStreamController = StreamController<P>.broadcast() {
+  }) : _debugMode = debugMode,
+       _onDispose = onDispose,
+       _converter = converter,
+       _initialParams = params is List ? params.first : null,
+       _delegate =
+           params is List
+               ? IsolateChannel.connectSend(params.last as SendPort)
+               : IsolateChannel.connectReceive(params as ReceivePort),
+       _mainStreamController = StreamController<R>.broadcast(),
+       _isolateStreamController = StreamController<P>.broadcast() {
     _streamSubscription = _delegate.stream.listen(
       _handleEvent,
       onError: _mainStreamController.addError,
@@ -61,8 +64,12 @@ class IsolateContactorControllerImpl<R, P>
   }
 
   @override
-  void sendIsolate(P message) {
-    _delegate.sink.add({IsolatePort.isolate: message});
+  void sendIsolate(P message, {List<Object>? transferables}) {
+    final payload = encodeNativeTransferPayload(
+      message,
+      transferables: transferables,
+    );
+    _delegate.sink.add({IsolatePort.isolate: payload});
   }
 
   @override
@@ -71,8 +78,12 @@ class IsolateContactorControllerImpl<R, P>
   }
 
   @override
-  void sendResult(R message) {
-    _delegate.sink.add({IsolatePort.main: message});
+  void sendResult(R message, {List<Object>? transferables}) {
+    final payload = encodeNativeTransferPayload(
+      message,
+      transferables: transferables,
+    );
+    _delegate.sink.add({IsolatePort.main: payload});
   }
 
   @override
@@ -103,11 +114,13 @@ class IsolateContactorControllerImpl<R, P>
   }
 
   void _handleMainPort(dynamic value) {
+    final decodedValue = decodeNativeTransferPayload(value);
+
     debugPrinter(
-      () => '[Main App] Message received from the Isolate: $value',
+      () => '[Main App] Message received from the Isolate: $decodedValue',
       debug: _debugMode,
     );
-    switch (value) {
+    switch (decodedValue) {
       case == IsolateState.initialized:
         if (!ensureInitialized.isCompleted) {
           ensureInitialized.complete();
@@ -116,7 +129,11 @@ class IsolateContactorControllerImpl<R, P>
         _mainStreamController.addError(e.error, e.stackTrace);
       default:
         try {
-          _mainStreamController.add(_converter?.call(value) ?? value as R);
+          _mainStreamController.add(
+            _converter?.call(decodedValue) ?? decodedValue as R,
+          );
+          // To catch both Error and Exception
+          // ignore: avoid_catches_without_on_clauses
         } catch (e, stack) {
           _mainStreamController.addError(e, stack);
         }
@@ -124,17 +141,21 @@ class IsolateContactorControllerImpl<R, P>
   }
 
   Future<void> _handleIsolatePort(dynamic value) async {
+    final decodedValue = decodeNativeTransferPayload(value);
+
     debugPrinter(
-      () => '[Isolate] Message received from the Main App: $value',
+      () => '[Isolate] Message received from the Main App: $decodedValue',
       debug: _debugMode,
     );
-    switch (value) {
+    switch (decodedValue) {
       case == IsolateState.dispose:
         _onDispose?.call();
         await close();
       default:
         try {
-          _isolateStreamController.add(value as P);
+          _isolateStreamController.add(decodedValue as P);
+          // To catch both Error and Exception
+          // ignore: avoid_catches_without_on_clauses
         } catch (e, stack) {
           _isolateStreamController.addError(e, stack);
         }

@@ -1,13 +1,15 @@
 import 'dart:async';
 
+import 'package:isolate_manager/isolate_manager.dart';
 import 'package:isolate_manager/src/base/isolate_contactor.dart';
-import 'package:isolate_manager/src/base/isolate_manager_shared.dart';
-import 'package:isolate_manager/src/isolate_manager_function.dart';
+import 'package:isolate_manager/src/isolate_manager_controller/web.dart'
+    if (dart.library.io) 'isolate_manager_controller/stub.dart';
 import 'package:isolate_manager/src/models/isolate_queue.dart';
-import 'package:isolate_manager/src/models/queue_strategy.dart';
 import 'package:isolate_manager/src/utils/converter.dart';
 import 'package:isolate_manager/src/utils/normalize_path.dart';
 import 'package:isolate_manager/src/utils/print.dart';
+
+part 'isolate_manager_controller.dart';
 
 /// Type for the callback of the isolate.
 typedef IsolateCallback<R> = FutureOr<bool> Function(R value);
@@ -33,6 +35,11 @@ class IsolateManager<R, P> {
   /// The conversion pipeline applies WASM conversions first, then passes results through
   /// any custom converter functions provided.
   ///
+  /// When [enableWasmTransferables] is `false` (default), `transferables` are omitted
+  /// when targeting WebAssembly (WASM) to avoid unnecessary overhead, as WASM does not
+  /// benefit from zero-copy transfers. Set to `true` to force the use of transferables
+  /// even on WASM.
+  ///
   /// Control the Queue strategy via [queueStrategy] with the following basic
   /// strategies:
   ///   - [UnlimitedStrategy] - default.
@@ -44,15 +51,18 @@ class IsolateManager<R, P> {
   IsolateManager.create(
     IsolateFunction<R, P> this.isolateFunction, {
     String? workerName,
+    String debugName = 'normal',
     this.concurrent = 1,
     this.converter,
     this.workerConverter,
     QueueStrategy<R, P>? queueStrategy,
     this.enableWasmConverter = true,
+    this.enableWasmTransferables = false,
     this.isDebug = false,
-  })  : isCustomIsolate = false,
-        queueStrategy = queueStrategy ?? UnlimitedStrategy(),
-        _workerName = normalizePath(workerName) {
+  }) : isCustomIsolate = false,
+       queueStrategy = queueStrategy ?? UnlimitedStrategy(),
+       _debugName = debugName,
+       _workerName = normalizePath(workerName) {
     IsolateContactor.debugLogPrefix = debugLogPrefix;
   }
 
@@ -74,6 +84,11 @@ class IsolateManager<R, P> {
   /// The conversion pipeline applies WASM conversions first, then passes results through
   /// any custom converter functions provided.
   ///
+  /// When [enableWasmTransferables] is `false` (default), `transferables` are omitted
+  /// when targeting WebAssembly (WASM) to avoid unnecessary overhead, as WASM does not
+  /// benefit from zero-copy transfers. Set to `true` to force the use of transferables
+  /// even on WASM.
+  ///
   /// Control the Queue strategy via [queueStrategy] with the following basic
   /// strategies:
   ///   - [UnlimitedStrategy] - default.
@@ -85,15 +100,18 @@ class IsolateManager<R, P> {
   IsolateManager.createCustom(
     IsolateCustomFunction this.isolateFunction, {
     String? workerName,
+    String debugName = 'custom',
     this.concurrent = 1,
     this.converter,
     this.workerConverter,
     QueueStrategy<R, P>? queueStrategy,
     this.enableWasmConverter = true,
+    this.enableWasmTransferables = false,
     this.isDebug = false,
-  })  : isCustomIsolate = true,
-        queueStrategy = queueStrategy ?? UnlimitedStrategy(),
-        _workerName = normalizePath(workerName) {
+  }) : isCustomIsolate = true,
+       queueStrategy = queueStrategy ?? UnlimitedStrategy(),
+       _debugName = debugName,
+       _workerName = normalizePath(workerName) {
     // Set the debug log prefix.
     IsolateContactor.debugLogPrefix = debugLogPrefix;
   }
@@ -157,18 +175,23 @@ class IsolateManager<R, P> {
   static Future<R> run<R>(
     FutureOr<R> Function() computation, {
     String? workerName,
+    String debugName = 'normal',
     Object? workerParameter,
     IsolateConverter<R>? converter,
     IsolateConverter<R>? workerConverter,
     bool enableWasmConverter = true,
+    bool enableWasmTransferables = false,
     bool isDebug = false,
   }) {
     return runFunction<R, Object?>(
       (_) => computation(),
       workerParameter,
       workerName: workerName,
+      debugName: debugName,
       converter: converter,
       workerConverter: workerConverter,
+      enableWasmConverter: enableWasmConverter,
+      enableWasmTransferables: enableWasmTransferables,
       isDebug: isDebug,
     );
   }
@@ -197,7 +220,7 @@ class IsolateManager<R, P> {
   ///   return fibonacciRecursive(n - 1) + fibonacciRecursive(n - 2);
   /// }
   ///
-  /// final result = await IsolateManager.run(fibonacciRecursive, 40);
+  /// final result = await IsolateManager.runFunction(fibonacciRecursive, 40);
   /// ```
   ///
   /// Set [isDebug] to `true` to enable debug logging.
@@ -205,17 +228,21 @@ class IsolateManager<R, P> {
     IsolateFunction<R, P> function,
     P parameter, {
     String? workerName,
+    String debugName = 'normal',
     IsolateConverter<R>? converter,
     IsolateConverter<R>? workerConverter,
     bool enableWasmConverter = true,
+    bool enableWasmTransferables = false,
     bool isDebug = false,
   }) async {
     final im = IsolateManager<R, P>.create(
       function,
       workerName: workerName,
+      debugName: debugName,
       converter: converter,
       workerConverter: workerConverter,
       enableWasmConverter: enableWasmConverter,
+      enableWasmTransferables: enableWasmTransferables,
       isDebug: isDebug,
     );
 
@@ -233,7 +260,9 @@ class IsolateManager<R, P> {
   /// web Workers when a [workerName] is provided. The [workerName] is automatically
   /// assigned if previously mapped via [addWorkerMapping] or a generator.
   ///
-  /// If [callback] is provided, it will be invoked with the result before returning.
+  /// If [callback] is provided, it will be invoked with intermediate results before
+  /// returning the final result. The [callback] should return `true` to indicate
+  /// the final result has been received.
   ///
   /// Transforms results using [converter] and [workerConverter] before returning them.
   ///
@@ -246,14 +275,26 @@ class IsolateManager<R, P> {
   ///
   /// Example:
   /// ```dart
-  /// @isolateManagerWorker
+  /// @isolateManagerCustomWorker
+  /// void customFibonacciFunction(dynamic params) {
+  ///  IsolateManagerFunction.customFunction<int, int>(
+  ///     params,
+  ///     onEvent: (IsolateManagerController<int, int> controller, int message) {
+  ///       return fibonacciRecursive(message);
+  ///     },
+  ///   );
+  /// }
+  ///
   /// int fibonacciRecursive(int n) {
   ///   if (n == 0) return 0;
   ///   if (n == 1) return 1;
   ///   return fibonacciRecursive(n - 1) + fibonacciRecursive(n - 2);
   /// }
   ///
-  /// final result = await IsolateManager.run(fibonacciRecursive, 40);
+  /// final result = await IsolateManager.runCustomFunction(
+  ///   customFibonacciFunction,
+  ///   40,
+  /// );
   /// ```
   ///
   /// Set [isDebug] to `true` to enable debug logging.
@@ -261,16 +302,22 @@ class IsolateManager<R, P> {
     IsolateCustomFunction function,
     P parameter, {
     String? workerName,
+    String debugName = 'custom',
     IsolateConverter<R>? converter,
     IsolateConverter<R>? workerConverter,
     IsolateCallback<R>? callback,
+    bool enableWasmConverter = true,
+    bool enableWasmTransferables = false,
     bool isDebug = false,
   }) async {
     final im = IsolateManager<R, P>.createCustom(
       function,
       workerName: workerName,
+      debugName: debugName,
       converter: converter,
       workerConverter: workerConverter,
+      enableWasmConverter: enableWasmConverter,
+      enableWasmTransferables: enableWasmTransferables,
       isDebug: isDebug,
     );
 
@@ -313,26 +360,27 @@ class IsolateManager<R, P> {
   static IsolateManagerShared createShared({
     int concurrent = 1,
     bool useWorker = false,
-    Object Function(dynamic)? workerConverter,
+    String debugName = 'shared',
+    Object? Function(dynamic)? workerConverter,
     Map<Function, String>? workerMappings,
     bool autoStart = true,
     String subPath = '',
     int maxQueueCount = 0,
-    QueueStrategy<Object, List<Object>>? queueStrategy,
+    QueueStrategy<Object?, List<dynamic>>? queueStrategy,
     bool enableWasmConverter = true,
     bool isDebug = false,
-  }) =>
-      IsolateManagerShared(
-        concurrent: concurrent,
-        useWorker: useWorker,
-        workerConverter: workerConverter,
-        workerMappings: workerMappings ?? _workerMappings,
-        autoStart: autoStart,
-        subPath: subPath,
-        queueStrategy: queueStrategy,
-        enableWasmConverter: enableWasmConverter,
-        isDebug: isDebug,
-      );
+  }) => IsolateManagerShared(
+    concurrent: concurrent,
+    useWorker: useWorker,
+    debugName: debugName,
+    workerConverter: workerConverter,
+    workerMappings: workerMappings ?? _workerMappings,
+    autoStart: autoStart,
+    subPath: subPath,
+    queueStrategy: queueStrategy,
+    enableWasmConverter: enableWasmConverter,
+    isDebug: isDebug,
+  );
 
   /// Debug logs prefix.
   static String debugLogPrefix = 'Isolate Manager';
@@ -380,6 +428,9 @@ class IsolateManager<R, P> {
 
   /// Isolate function.
   final Object isolateFunction;
+
+  /// Logical name for the isolate manager.
+  final String? _debugName;
 
   /// Name of the `Worker` without the extension.
   ///
@@ -587,6 +638,16 @@ class IsolateManager<R, P> {
   /// Default is `true`. Enable this when working with integer data in WASM environments.
   final bool enableWasmConverter;
 
+  /// Flag to enable transferables on WebAssembly (WASM).
+  ///
+  /// When an application is compiled to WebAssembly (WASM), using `transferables` for
+  /// zero-copy data transfer does not provide performance benefits and may add unnecessary
+  /// overhead, as WASM linear memory must still be copied to the JS heap.
+  ///
+  /// When this flag is `false` (default), `transferables` are automatically omitted
+  /// when targeting WASM. Set to `true` to force the use of transferables even on WASM.
+  final bool enableWasmTransferables;
+
   /// If you want to call the [start] method manually without `await`, you can `await`
   /// later by using [ensureStarted] to ensure that all the isolates are started.
   Future<void> get ensureStarted => _startedCompleter.future;
@@ -610,12 +671,14 @@ class IsolateManager<R, P> {
 
   /// A default function for using the [IsolateManager.create] method.
   static void _defaultIsolateFunction<R, P>(dynamic params) {
-    IsolateManagerFunction.customFunction<R, P>(
-      params,
-      onEvent: (controller, message) {
-        final function = controller.initialParams;
-        return (function as Function)(message) as FutureOr<R>;
-      },
+    unawaited(
+      IsolateManagerFunction.customFunction<R, P>(
+        params,
+        onEvent: (controller, message) {
+          final function = controller._initialParams;
+          return (function as Function)(message) as FutureOr<R>;
+        },
+      ),
     );
   }
 
@@ -638,58 +701,68 @@ class IsolateManager<R, P> {
 
     if (isCustomIsolate) {
       // Create the custom isolates.
-      await Future.wait(
-        <Future<void>>[
-          for (int i = 0; i < concurrent; i++)
-            IsolateContactor.createCustom<R, P>(
-              isolateFunction as IsolateCustomFunction,
-              workerName: workerName,
-              initialParams: null,
-              converter: (value) => converterHelper(
-                value,
-                customConverter: converter,
-                enableWasmConverter: enableWasmConverter,
-              ),
-              workerConverter: (value) => converterHelper(
-                value,
-                customConverter: workerConverter,
-                enableWasmConverter: enableWasmConverter,
-              ),
-              debugMode: isDebug,
-            ).then(
-              (IsolateContactor<R, P> value) => _isolates
-                  .addAll(<IsolateContactor<R, P>, bool>{value: false}),
-            ),
-        ],
+      final debugNames = List<String>.generate(
+        concurrent,
+        (index) => _buildIsolateDebugName(index + 1),
       );
+      await Future.wait(<Future<void>>[
+        for (final debugName in debugNames)
+          IsolateContactor.createCustom<R, P>(
+            isolateFunction as IsolateCustomFunction,
+            workerName: workerName,
+            initialParams: null,
+            debugName: debugName,
+            converter:
+                (value) => converterHelper(
+                  value,
+                  customConverter: converter,
+                  enableWasmConverter: enableWasmConverter,
+                ),
+            workerConverter:
+                (value) => converterHelper(
+                  value,
+                  customConverter: workerConverter,
+                  enableWasmConverter: enableWasmConverter,
+                ),
+            debugMode: isDebug,
+          ).then(
+            (value) =>
+                _isolates.addAll(<IsolateContactor<R, P>, bool>{value: false}),
+          ),
+      ]);
     } else {
       // Create isolates with the internal method.
-      await Future.wait(
-        <Future<void>>[
-          for (int i = 0; i < concurrent; i++)
-            IsolateContactor.createCustom<R, P>(
-              _defaultIsolateFunction<R, P>,
-              initialParams: isolateFunction as IsolateFunction<R, P>,
-              workerName: workerName,
-              converter: (value) => converterHelper(
-                value,
-                customConverter: converter,
-                enableWasmConverter: enableWasmConverter,
-              ),
-              workerConverter: (value) => converterHelper(
-                value,
-                customConverter: workerConverter,
-                enableWasmConverter: enableWasmConverter,
-              ),
-              debugMode: isDebug,
-            ).then((value) => _isolates[value] = false),
-        ],
+      final debugNames = List<String>.generate(
+        concurrent,
+        (index) => _buildIsolateDebugName(index + 1),
       );
+      await Future.wait(<Future<void>>[
+        for (final debugName in debugNames)
+          IsolateContactor.createCustom<R, P>(
+            _defaultIsolateFunction<R, P>,
+            initialParams: isolateFunction as IsolateFunction<R, P>,
+            workerName: workerName,
+            debugName: debugName,
+            converter:
+                (value) => converterHelper(
+                  value,
+                  customConverter: converter,
+                  enableWasmConverter: enableWasmConverter,
+                ),
+            workerConverter:
+                (value) => converterHelper(
+                  value,
+                  customConverter: workerConverter,
+                  enableWasmConverter: enableWasmConverter,
+                ),
+            debugMode: isDebug,
+          ).then((value) => _isolates[value] = false),
+      ]);
     }
 
     _streamSubscription = _streamController.stream.listen(
       (_) => _executeQueue(),
-      onError: (_, __) => _executeQueue(),
+      onError: (_, _) => _executeQueue(),
     );
 
     _executeQueue();
@@ -731,12 +804,10 @@ class IsolateManager<R, P> {
     _isStarting = false;
     _startedCompleter = Completer();
     queueStrategy.clear();
-    await Future.wait(
-      <Future<void>>[
-        for (final isolate in _isolates.keys) isolate.dispose(),
-        _streamSubscription.cancel(),
-      ],
-    );
+    await Future.wait(<Future<void>>[
+      for (final isolate in _isolates.keys) isolate.dispose(),
+      _streamSubscription.cancel(),
+    ]);
     _isolates.clear();
   }
 
@@ -830,16 +901,26 @@ class IsolateManager<R, P> {
     P params, {
     IsolateCallback<R>? callback,
     bool priority = false,
-  }) =>
-      compute(params, callback: callback, priority: priority);
+    List<Object>? transferables,
+  }) => compute(
+    params,
+    callback: callback,
+    priority: priority,
+    transferables: transferables,
+  );
 
   ///  Similar to the [compute], for who's using IsolateContactor.
   Future<R> sendMessage(
     P params, {
     IsolateCallback<R>? callback,
     bool priority = false,
-  }) =>
-      compute(params, callback: callback, priority: priority);
+    List<Object>? transferables,
+  }) => compute(
+    params,
+    callback: callback,
+    priority: priority,
+    transferables: transferables,
+  );
 
   /// Compute isolate manager with [R] is return type.
   ///
@@ -877,10 +958,19 @@ class IsolateManager<R, P> {
     P params, {
     IsolateCallback<R>? callback,
     bool priority = false,
+    List<Object>? transferables,
   }) async {
     await start();
 
-    final queue = IsolateQueue<R, P>(params, callback);
+    // Omit transferables on WASM unless explicitly enabled
+    final effectiveTransferables =
+        (!enableWasmTransferables && kIsWasm) ? null : transferables;
+
+    final queue = IsolateQueue<R, P>(
+      params,
+      callback,
+      transferables: effectiveTransferables,
+    );
     queueStrategy.add(queue, addToTop: priority);
     _executeQueue();
 
@@ -894,7 +984,7 @@ class IsolateManager<R, P> {
       /// Allow calling `compute` before `start`.
       if (queueStrategy.hasNext() && _isolates[isolate] == false) {
         final queue = queueStrategy.getNext();
-        _execute(isolate, queue);
+        unawaited(_execute(isolate, queue));
       }
     }
   }
@@ -934,8 +1024,13 @@ class IsolateManager<R, P> {
     );
 
     try {
-      await isolate.sendMessage(queue.params);
-    } catch (_, __) {
+      await isolate.sendMessage(
+        queue.params,
+        transferables: queue.transferables,
+      );
+      // To catch both Error and Exception
+      // ignore: avoid_catches_without_on_clauses
+    } catch (_) {
       /* Do not need to catch the Exception here because it's catched in the above Stream */
     }
 
@@ -945,5 +1040,17 @@ class IsolateManager<R, P> {
   /// Print logs if [isDebug] is true
   void printDebug(Object? Function() object) {
     debugPrinter(object, debug: isDebug);
+  }
+
+  static int _globalIsolateCount = 0;
+
+  String _buildIsolateDebugName(int index) {
+    final globalName = 'Isolate-${++_globalIsolateCount}';
+    final trimmedDebugName = _debugName?.trim();
+    final debugNameSegment =
+        (trimmedDebugName == null || trimmedDebugName.isEmpty)
+            ? ''
+            : '-$trimmedDebugName';
+    return '$globalName$debugNameSegment-$index';
   }
 }

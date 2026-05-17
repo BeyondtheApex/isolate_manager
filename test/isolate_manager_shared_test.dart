@@ -18,6 +18,7 @@ void main() async {
     final isolates = IsolateManager.createShared(
       concurrent: 3,
       useWorker: true,
+      debugName: 'worker',
       subPath: 'workers',
       isDebug: true,
     );
@@ -34,29 +35,22 @@ void main() async {
 
     await Future.wait([
       for (var i = 0; i < 10; i++)
-        isolates.compute(
-          addFuture,
-          <double>[i.toDouble(), i.toDouble()],
-        ).then(
-          (double value) async {
-            expect(
-              value,
-              equals(await addFuture(<double>[i.toDouble(), i.toDouble()])),
-            );
-          },
-        ),
+        isolates.compute(addFuture, <double>[i.toDouble(), i.toDouble()]).then((
+          value,
+        ) async {
+          expect(
+            value,
+            equals(await addFuture(<double>[i.toDouble(), i.toDouble()])),
+          );
+        }),
       for (var i = 0; i < 10; i++)
-        isolates(add, <int>[i, i]).then(
-          (int value) {
-            expect(value, equals(add(<int>[i, i])));
-          },
-        ),
+        isolates(add, <int>[i, i]).then((value) {
+          expect(value, equals(add(<int>[i, i])));
+        }),
       for (var i = 0; i < 10; i++)
-        isolates.compute(concat, <String>['$i', '$i']).then(
-          (String value) {
-            expect(value, equals(concat(<String>['$i', '$i'])));
-          },
-        ),
+        isolates.compute(concat, <String>['$i', '$i']).then((value) {
+          expect(value, equals(concat(<String>['$i', '$i'])));
+        }),
     ]);
 
     // Stop the usolate after 5 seconds
@@ -69,6 +63,7 @@ void main() async {
       concurrent: 3,
       subPath: 'workers',
       useWorker: true,
+      debugName: 'processor',
     );
 
     isolates.stream.listen((result) {
@@ -83,26 +78,25 @@ void main() async {
 
     await Future.wait([
       for (var i = 0; i < 10; i++)
-        isolates.compute(addFuture, <double>[i.toDouble(), i.toDouble()]).then(
-          (double value) async {
-            expect(
-              value,
-              equals(await addFuture(<double>[i.toDouble(), i.toDouble()])),
-            );
-          },
-        ),
+        isolates.compute(addFuture, <double>[i.toDouble(), i.toDouble()]).then((
+          value,
+        ) async {
+          expect(
+            value,
+            equals(await addFuture(<double>[i.toDouble(), i.toDouble()])),
+          );
+        }),
       for (var i = 0; i < 10; i++)
-        isolates(add, <int>[i, i]).then(
-          (int value) {
-            expect(value, equals(add(<int>[i, i])));
-          },
-        ),
+        isolates(add, <int>[i, i]).then((value) {
+          expect(value, equals(add(<int>[i, i])));
+        }),
       for (var i = 0; i < 10; i++)
-        isolates.compute(concat, <String>['$i', '$i']).then((String value) {
+        isolates.compute(concat, <String>['$i', '$i']).then((value) {
           expect(value, equals(concat(<String>['$i', '$i'])));
         }),
-      isolates.compute(aDynamicMap, <String, Object>{'k': 1, 't': '2'}).then(
-          (Map<dynamic, dynamic> value) {
+      isolates.compute(aDynamicMap, <String, Object>{'k': 1, 't': '2'}).then((
+        value,
+      ) {
         expect(value, equals(<String, Object>{'k': 1, 't': '2'}));
       }),
     ]);
@@ -167,12 +161,9 @@ void main() async {
   test('Complex return', () async {
     final isolates = IsolateManager.createShared();
 
-    final result = await isolates.compute(
-      complexReturn,
-      <List<String>>[
-        <String>['abc'],
-      ],
-    );
+    final result = await isolates.compute(complexReturn, <List<String>>[
+      <String>['abc'],
+    ]);
 
     await isolates.restart();
 
@@ -190,6 +181,8 @@ void main() async {
   test('Test `workerFunction`', () {
     try {
       IsolateManagerFunction.sharedWorkerFunction(<String, Function>{});
+      // To catch both Error and Exception
+      // ignore: avoid_catches_without_on_clauses
     } catch (e) {
       expect(e, isA<UnimplementedError>());
     }
@@ -282,10 +275,7 @@ void main() async {
       final result = await isolates.compute(isolateTypeList, value);
 
       expect(result, isA<ImList>());
-      expect(
-        result,
-        equals(const ImList(<ImString>[ImString('100')])),
-      );
+      expect(result, equals(const ImList(<ImString>[ImString('100')])));
     });
 
     test('Map', () async {
@@ -324,10 +314,7 @@ void main() async {
       isDebug: true,
     );
 
-    expect(
-      await isolates.compute(addWithoutWorker, <int>[2, 3]),
-      equals(5),
-    );
+    expect(await isolates.compute(addWithoutWorker, <int>[2, 3]), equals(5));
   });
 
   test('Test multiple stop calls', () async {
@@ -365,6 +352,8 @@ void main() async {
     // This would depend on implementation details, but you could try:
     try {
       await isolates.compute(addException, <int>[1, 1]);
+      // To catch both Error and Exception
+      // ignore: avoid_catches_without_on_clauses
     } catch (_) {
       // Expected
     }
@@ -377,10 +366,7 @@ void main() async {
   });
 
   test('Test pause and resume', () async {
-    final isolates = IsolateManager.createShared(
-      concurrent: 2,
-      isDebug: true,
-    );
+    final isolates = IsolateManager.createShared(concurrent: 2, isDebug: true);
 
     // First computation should work
     final result1 = await isolates.compute(add, <int>[5, 7]);
@@ -433,16 +419,10 @@ void main() async {
     await isolates.stop();
 
     // Should not throw
-    await expectLater(
-      isolates.pause,
-      throwsA(isA<IsolateException>()),
-    );
+    await expectLater(isolates.pause, throwsA(isA<IsolateException>()));
 
     // Try to restart after pause on stopped isolates
-    await expectLater(
-      isolates.restart,
-      throwsA(isA<IsolateException>()),
-    );
+    await expectLater(isolates.restart, throwsA(isA<IsolateException>()));
 
     // Verify isolate is still stopped
     expect(isolates.isStarted, isFalse);
@@ -451,6 +431,8 @@ void main() async {
     try {
       await isolates.compute(add, <int>[1, 2]);
       fail('Should not reach here - compute should fail on stopped isolate');
+      // To catch both Error and Exception
+      // ignore: avoid_catches_without_on_clauses
     } catch (e) {
       // Expected exception
     }

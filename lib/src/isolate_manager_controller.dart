@@ -1,8 +1,4 @@
-import 'dart:async';
-
-import 'package:isolate_manager/isolate_manager.dart';
-import 'package:isolate_manager/src/isolate_manager_controller/web.dart'
-    if (dart.library.io) 'isolate_manager_controller/stub.dart';
+part of 'isolate_manager.dart';
 
 /// This method only use to create a custom isolate.
 class IsolateManagerController<R, P> {
@@ -10,13 +6,11 @@ class IsolateManagerController<R, P> {
   ///
   /// The [params] is a default parameter of a custom isolate function.
   /// `onDispose` will be called when the controller is disposed.
-  IsolateManagerController(
-    dynamic params, {
-    void Function()? onDispose,
-  }) : _delegate = IsolateManagerControllerImpl<R, P>(
-          params,
-          onDispose: onDispose,
-        );
+  IsolateManagerController(dynamic params, {void Function()? onDispose})
+    : _delegate = IsolateManagerControllerImpl<R, P>(
+        params,
+        onDispose: onDispose,
+      );
   final IsolateManagerControllerImpl<R, P> _delegate;
 
   /// Mark the isolate as initialized.
@@ -28,8 +22,8 @@ class IsolateManagerController<R, P> {
   /// Close this `IsolateManagerController`.
   Future<void> close() => _delegate.close();
 
-  /// Get initial parameters when you create the IsolateManager.
-  dynamic get initialParams => _delegate.initialParams;
+  /// Get initial parameters when you create the IsolateManager. For internal use only.
+  dynamic get _initialParams => _delegate.initialParams;
 
   /// This parameter is only used for Isolate. Use to listen for values from the main application.
   Stream<P> get onIsolateMessage => _delegate.onIsolateMessage;
@@ -57,7 +51,12 @@ class IsolateManagerController<R, P> {
   void sendRawMessage(dynamic data) => _delegate.sendRawMessage(data);
 
   /// Send values from Isolate to the main application (to `onMessage`).
-  void sendResult(R result) => _delegate.sendResult(result);
+  ///
+  /// [transferables] - Optional list of transferable objects (e.g., ByteBuffer, Uint8List)
+  /// that will be transferred instead of copied. Only works on web platform.
+  /// On native platforms, listed buffers are encoded as TransferableTypedData.
+  void sendResult(R result, {List<Object>? transferables}) =>
+      _delegate.sendResult(result, transferables: transferables);
 
   /// Send the `Exception` to the main app.
   void sendResultError(IsolateException exception) =>

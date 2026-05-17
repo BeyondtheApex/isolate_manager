@@ -18,16 +18,17 @@ class IsolateContactorInternalWorker<R, P>
     required String workerName,
     required IsolateConverter<R> converter,
     required IsolateConverter<R> workerConverter,
+    required super.debugName,
     super.debugMode,
-  })  : _isolateFunction = isolateFunction,
-        _isolateParam = isolateParam,
-        _isolateContactorController = IsolateContactorControllerImpl(
-          Worker('$workerName.js'.toJS),
-          converter: converter,
-          workerConverter: workerConverter,
-          onDispose: null,
-          debugMode: debugMode,
-        );
+  }) : _isolateFunction = isolateFunction,
+       _isolateParam = isolateParam,
+       _isolateContactorController = IsolateContactorControllerImpl(
+         Worker('$workerName.js'.toJS),
+         converter: converter,
+         workerConverter: workerConverter,
+         onDispose: null,
+         debugMode: debugMode,
+       );
 
   /// Listener for result
   final IsolateContactorController<R, P> _isolateContactorController;
@@ -47,6 +48,7 @@ class IsolateContactorInternalWorker<R, P>
     required Object? initialParams,
     required IsolateConverter<R> converter,
     required IsolateConverter<R> workerConverter,
+    required String debugName,
     bool debugMode = false,
   }) async {
     final isolateContactor = IsolateContactorInternalWorker<R, P>._(
@@ -55,6 +57,7 @@ class IsolateContactorInternalWorker<R, P>
       isolateParam: initialParams,
       converter: converter,
       workerConverter: workerConverter,
+      debugName: debugName,
       debugMode: debugMode,
     );
 
@@ -81,9 +84,12 @@ class IsolateContactorInternalWorker<R, P>
   }
 
   @override
-  Future<R> sendMessage(P message) async {
+  Future<R> sendMessage(P message, {List<Object>? transferables}) async {
     printDebug(() => '[Main App] Message sent to the Web Worker: $message');
-    _isolateContactorController.sendIsolate(message);
+    _isolateContactorController.sendIsolate(
+      message,
+      transferables: transferables,
+    );
     return _isolateContactorController.onMessage.first;
   }
 }

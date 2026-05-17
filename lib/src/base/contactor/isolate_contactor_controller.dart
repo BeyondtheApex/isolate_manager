@@ -16,6 +16,7 @@ abstract class IsolateContactorController<R, P> {
   factory IsolateContactorController(
     /// `params` is the default parameters of the isolate function.
     dynamic params, {
+
     /// `onDispose` is called when the controller is disposed.
     FutureOr<void> Function()? onDispose,
   }) {
@@ -45,13 +46,21 @@ abstract class IsolateContactorController<R, P> {
   Completer<void> get ensureInitialized;
 
   /// Send `message` to the isolate for computation
-  void sendIsolate(P message);
+  ///
+  /// [transferables] - Optional list of transferable objects (e.g., ByteBuffer)
+  /// that will be transferred instead of copied. Only works on web platform.
+  /// On native platforms, listed buffers are encoded as TransferableTypedData.
+  void sendIsolate(P message, {List<Object>? transferables});
 
   /// Send an `IsolateState` message to the isolate
   void sendIsolateState(IsolateState state);
 
   /// Send the `result` of computation to `onIsolateMessage` stream
-  void sendResult(R result);
+  ///
+  /// [transferables] - Optional list of transferable objects (e.g., ByteBuffer)
+  /// that will be transferred instead of copied. Only works on web platform.
+  /// On native platforms, listed buffers are encoded as TransferableTypedData.
+  void sendResult(R result, {List<Object>? transferables});
 
   /// Send the `Exception` to the main app
   void sendResultError(IsolateException exception);

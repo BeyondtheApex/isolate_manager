@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:isolate_manager/isolate_manager.dart';
 import 'package:isolate_manager/src/base/contactor/models/isolate_port.dart';
@@ -32,8 +34,10 @@ void main() {
     });
 
     test('IsolateException', () {
-      final exception =
-          IsolateException('Object', StackTrace.fromString('stackTrace'));
+      final exception = IsolateException(
+        'Object',
+        StackTrace.fromString('stackTrace'),
+      );
       final json = exception.toMap();
       expect(IsolateException.isValidMap(json), equals(true));
       expect(IsolateException.fromMap(json), isA<IsolateException>());
@@ -61,42 +65,45 @@ void main() {
     });
 
     test(
-        'should throw an exception when adding a duplicate function without overwrite',
-        () {
-      void testFunction(_) {}
-      const workerName = 'testFunction';
+      'should throw an exception when adding a duplicate function without overwrite',
+      () {
+        void testFunction(_) {}
+        const workerName = 'testFunction';
 
-      IsolateManager.addWorkerMapping(testFunction, workerName);
+        IsolateManager.addWorkerMapping(testFunction, workerName);
 
-      expect(
-        () => IsolateManager.addWorkerMapping(testFunction, 'newWorker'),
-        throwsA(isA<IsolateException>()),
-      );
+        expect(
+          () => IsolateManager.addWorkerMapping(testFunction, 'newWorker'),
+          throwsA(isA<IsolateException>()),
+        );
 
-      // Ensure the mapping remains unchanged
-      final isolate = IsolateManager.create(testFunction);
-      expect(isolate.workerName, equals(workerName));
-    });
+        // Ensure the mapping remains unchanged
+        final isolate = IsolateManager.create(testFunction);
+        expect(isolate.workerName, equals(workerName));
+      },
+    );
 
-    test('should overwrite an existing function mapping when overwrite is true',
-        () {
-      void testFunction(_) {}
-      const oldWorkerName = 'testFunction';
-      const newWorkerName = 'newWorker';
+    test(
+      'should overwrite an existing function mapping when overwrite is true',
+      () {
+        void testFunction(_) {}
+        const oldWorkerName = 'testFunction';
+        const newWorkerName = 'newWorker';
 
-      IsolateManager.addWorkerMapping(testFunction, oldWorkerName);
-      final isolate = IsolateManager.create(testFunction);
+        IsolateManager.addWorkerMapping(testFunction, oldWorkerName);
+        final isolate = IsolateManager.create(testFunction);
 
-      expect(isolate.workerName, equals(oldWorkerName));
+        expect(isolate.workerName, equals(oldWorkerName));
 
-      IsolateManager.addWorkerMapping(
-        testFunction,
-        newWorkerName,
-        overwrite: true,
-      );
+        IsolateManager.addWorkerMapping(
+          testFunction,
+          newWorkerName,
+          overwrite: true,
+        );
 
-      expect(isolate.workerName, equals(newWorkerName));
-    });
+        expect(isolate.workerName, equals(newWorkerName));
+      },
+    );
   });
 
   group('IsolateType - ', () {
@@ -153,11 +160,7 @@ void main() {
       });
 
       test('wraps Map as ImMap and can decode map', () {
-        final mapValue = {
-          'a': 1,
-          'b': false,
-          'c': 'three',
-        };
+        final mapValue = {'a': 1, 'b': false, 'c': 'three'};
         final encoded = ImType.wrap(mapValue);
         expect(encoded, isA<ImMap>());
         final isolateMap = encoded as ImMap;
@@ -177,23 +180,27 @@ void main() {
         );
       });
 
-      test('throws UnsupportedImTypeException for unsupported types in ImList',
-          () {
-        final unsupportedValue = [null];
-        expect(
-          () => ImType.wrap(unsupportedValue),
-          throwsA(isA<UnsupportedImTypeException>()),
-        );
-      });
+      test(
+        'throws UnsupportedImTypeException for unsupported types in ImList',
+        () {
+          final unsupportedValue = [null];
+          expect(
+            () => ImType.wrap(unsupportedValue),
+            throwsA(isA<UnsupportedImTypeException>()),
+          );
+        },
+      );
 
-      test('throws UnsupportedImTypeException for unsupported types in ImMap',
-          () {
-        final unsupportedValue = {'key': null};
-        expect(
-          () => ImType.wrap(unsupportedValue),
-          throwsA(isA<UnsupportedImTypeException>()),
-        );
-      });
+      test(
+        'throws UnsupportedImTypeException for unsupported types in ImMap',
+        () {
+          final unsupportedValue = {'key': null};
+          expect(
+            () => ImType.wrap(unsupportedValue),
+            throwsA(isA<UnsupportedImTypeException>()),
+          );
+        },
+      );
     });
 
     group('ImList helper methods', () {
@@ -214,10 +221,7 @@ void main() {
 
     group('ImMap helper methods', () {
       test('toMap and toDecodedMap work correctly', () {
-        final mapValue = {
-          'x': 100,
-          'y': 200,
-        };
+        final mapValue = {'x': 100, 'y': 200};
         final encoded = ImType.wrap(mapValue) as ImMap;
 
         // Testing toMap which casts the internal map to specified types.
@@ -264,16 +268,15 @@ void main() {
 
         test('List', () async {
           const value = ImList(<ImNum>[ImNum(100)]);
-          final isolates =
-              IsolateManager.create(isolateTypeList, isDebug: true);
+          final isolates = IsolateManager.create(
+            isolateTypeList,
+            isDebug: true,
+          );
 
           final result = await isolates.compute(value);
 
           expect(result, isA<ImList>());
-          expect(
-            result,
-            equals(const ImList(<ImString>[ImString('100')])),
-          );
+          expect(result, equals(const ImList(<ImString>[ImString('100')])));
         });
 
         test('List to Map', () async {
@@ -330,14 +333,8 @@ void main() {
       expect(const ImNum(10) == const ImNum(11), isFalse);
 
       // Test string equality
-      expect(
-        const ImString('test') == const ImString('test'),
-        isTrue,
-      );
-      expect(
-        const ImString('test') == const ImString('other'),
-        isFalse,
-      );
+      expect(const ImString('test') == const ImString('test'), isTrue);
+      expect(const ImString('test') == const ImString('other'), isFalse);
 
       // Test bool equality
       expect(const ImBool(true) == const ImBool(true), isTrue);
@@ -363,9 +360,7 @@ void main() {
     });
 
     test('Test multiple starts have no effect', () async {
-      final isolateManager = IsolateManager<int, int>.create(
-        fibonacci,
-      );
+      final isolateManager = IsolateManager<int, int>.create(fibonacci);
 
       await isolateManager.start();
       final firstStart = isolateManager.isStarted;
@@ -378,9 +373,7 @@ void main() {
     });
 
     test('Test stop() when isolate is not started', () async {
-      final isolateManager = IsolateManager<int, int>.create(
-        fibonacci,
-      );
+      final isolateManager = IsolateManager<int, int>.create(fibonacci);
 
       // Stop without starting
       await isolateManager.stop();
@@ -388,9 +381,7 @@ void main() {
     });
 
     test('Test compute() with priority parameter', () async {
-      final isolateManager = IsolateManager<int, int>.create(
-        fibonacci,
-      );
+      final isolateManager = IsolateManager<int, int>.create(fibonacci);
 
       // Add several tasks
       final futures = <Future<int>>[];
@@ -409,9 +400,7 @@ void main() {
     });
 
     test('Test stream broadcasts to multiple listeners', () async {
-      final isolateManager = IsolateManager<int, int>.create(
-        fibonacci,
-      );
+      final isolateManager = IsolateManager<int, int>.create(fibonacci);
 
       final receivedValues1 = <int>[];
       final receivedValues2 = <int>[];
@@ -436,9 +425,7 @@ void main() {
     });
 
     test('Test ensureStarted future completes after start', () async {
-      final isolateManager = IsolateManager<int, int>.create(
-        fibonacci,
-      );
+      final isolateManager = IsolateManager<int, int>.create(fibonacci);
 
       // Start in background
       isolateManager.start().ignore();
@@ -494,6 +481,7 @@ void main() {
 
       final isolateManager = IsolateManager<int, int>.create(
         fibonacci,
+        debugName: 'worker',
         isDebug: true,
       );
 
@@ -569,6 +557,8 @@ void main() {
       try {
         await isolates.compute(add, <int>[1, 2]);
         fail('Should not reach here - compute should fail on stopped isolate');
+        // To catch both Error and Exception
+        // ignore: avoid_catches_without_on_clauses
       } catch (e) {
         // Expected exception
       }
@@ -576,74 +566,79 @@ void main() {
   });
 
   group(
-      skip: kIsWasm ? false : 'Only run on WebAssembly',
-      'Converter functions in WASM', () {
-    test('work with Iterable<int>', () {
-      final iterable = Iterable<int>.generate(3, (index) => index);
-      final encoded = converterHelper<Iterable<int>>(iterable);
-      final encodedIm = converterHelper<ImList>(ImList.wrap(iterable));
-      expect(encodedIm, isA<ImList>());
-      expect(encodedIm.unwrap, equals(iterable));
-      expect(encoded, equals(iterable));
-    });
+    skip: kIsWasm ? false : 'Only run on WebAssembly',
+    'Converter functions in WASM',
+    () {
+      test('work with Iterable<int>', () {
+        final iterable = Iterable<int>.generate(3, (index) => index);
+        final encoded = converterHelper<Iterable<int>>(iterable);
+        final encodedIm = converterHelper<ImList>(ImList.wrap(iterable));
+        expect(encodedIm, isA<ImList>());
+        expect(encodedIm.unwrap, equals(iterable));
+        expect(encoded, equals(iterable));
+      });
 
-    test('work with Iterable<double>', () {
-      final iterable = Iterable<double>.generate(3, (index) => index * 1.0);
-      final encoded = converterHelper<Iterable<double>>(iterable);
-      final encodedIm = converterHelper<ImList>(ImList.wrap(iterable));
-      expect(encodedIm, isA<ImList>());
-      expect(encodedIm.unwrap, equals(iterable));
-      expect(encoded, equals(iterable));
-    });
+      test('work with Iterable<double>', () {
+        final iterable = Iterable<double>.generate(3, (index) => index * 1.0);
+        final encoded = converterHelper<Iterable<double>>(iterable);
+        final encodedIm = converterHelper<ImList>(ImList.wrap(iterable));
+        expect(encodedIm, isA<ImList>());
+        expect(encodedIm.unwrap, equals(iterable));
+        expect(encoded, equals(iterable));
+      });
 
-    test('work with List<int>', () {
-      final iterable = [1, 2, 3];
-      final encoded = converterHelper<ImList>(ImList.wrap(iterable));
-      expect(encoded, isA<ImList>());
-      expect(encoded.unwrap, equals(iterable));
-    });
+      test('work with List<int>', () {
+        final iterable = [1, 2, 3];
+        final encoded = converterHelper<ImList>(ImList.wrap(iterable));
+        expect(encoded, isA<ImList>());
+        expect(encoded.unwrap, equals(iterable));
+      });
 
-    test('work with int', () {
-      const value = 10;
-      final encoded = converterHelper<int>(value);
-      expect(encoded, isA<int>());
-      expect(encoded, equals(value));
-    });
+      test('work with Uint8List', () {
+        final encoded = converterHelper<Uint8List>(<int>[1, 2, 3]);
+        expect(encoded, isA<Uint8List>());
+        expect(encoded, orderedEquals(<int>[1, 2, 3]));
+      });
 
-    test('work with double', () {
-      const value = 10.0;
-      final encoded = converterHelper<double>(value);
-      expect(encoded, isA<double>());
-      expect(encoded, equals(value));
-    });
+      test('work with int', () {
+        const value = 10;
+        final encoded = converterHelper<int>(value);
+        expect(encoded, isA<int>());
+        expect(encoded, equals(value));
+      });
 
-    test('work with ImNum int', () {
-      const value = 10;
-      final encoded = converterHelper<ImNum>(const ImNum(value));
-      expect(encoded, isA<ImNum>());
-      expect(encoded.unwrap, equals(value));
-    });
+      test('work with double', () {
+        const value = 10.0;
+        final encoded = converterHelper<double>(value);
+        expect(encoded, isA<double>());
+        expect(encoded, equals(value));
+      });
 
-    test('work with ImNum double', () {
-      const value = 10.0;
-      final encoded = converterHelper<ImNum>(const ImNum(value));
-      expect(encoded, isA<ImNum>());
-      expect(encoded.unwrap, equals(value));
-    });
+      test('work with ImNum int', () {
+        const value = 10;
+        final encoded = converterHelper<ImNum>(const ImNum(value));
+        expect(encoded, isA<ImNum>());
+        expect(encoded.unwrap, equals(value));
+      });
 
-    test('converterHelper', () async {
-      final isolateManager = IsolateManager.create(fibonacci);
+      test('work with ImNum double', () {
+        const value = 10.0;
+        final encoded = converterHelper<ImNum>(const ImNum(value));
+        expect(encoded, isA<ImNum>());
+        expect(encoded.unwrap, equals(value));
+      });
 
-      await isolateManager.start();
-      final result = await isolateManager.compute(5);
-      expect(result, equals(fibonacci(5)));
+      test('converterHelper', () async {
+        final isolateManager = IsolateManager.create(fibonacci);
 
-      await isolateManager.stop();
-    });
+        await isolateManager.start();
+        final result = await isolateManager.compute(5);
+        expect(result, equals(fibonacci(5)));
 
-    test(
-      'disabling WASM converter affects results',
-      () async {
+        await isolateManager.stop();
+      });
+
+      test('disabling WASM converter affects results', () async {
         final isolateManager = IsolateManager<int, int>.create(
           fibonacci,
           enableWasmConverter: false,
@@ -653,62 +648,64 @@ void main() {
           await isolateManager.start();
           await isolateManager.compute(5);
           fail('Should not reach here - WASM converter should be disabled');
+          // To catch both Error and Exception
+          // ignore: avoid_catches_without_on_clauses
         } catch (e) {
           // Expected exception
         } finally {
           await isolateManager.stop();
         }
-      },
-    );
+      });
 
-    test('Converts num to int', () {
-      expect(converterHelper<int>(4.7), equals(4));
-      expect(converterHelper<int>(10.1), equals(10));
-    });
+      test('Converts num to int', () {
+        expect(converterHelper<int>(4.7), equals(4));
+        expect(converterHelper<int>(10.1), equals(10));
+      });
 
-    test('Converts List<num> to List<int>', () {
-      expect(converterHelper<List<int>>([1.9, 2.1, 3.5]), equals([1, 2, 3]));
-      expect(
-        converterHelper<List<int>>([10.5, 20.8, 30.2]),
-        equals([10, 20, 30]),
-      );
-    });
+      test('Converts List<num> to List<int>', () {
+        expect(converterHelper<List<int>>([1.9, 2.1, 3.5]), equals([1, 2, 3]));
+        expect(
+          converterHelper<List<int>>([10.5, 20.8, 30.2]),
+          equals([10, 20, 30]),
+        );
+      });
 
-    test('Converts Set<num> to Set<int>', () {
-      expect(converterHelper<Set<int>>({4.9, 5.1, 6.7}), equals({4, 5, 6}));
-      expect(
-        converterHelper<Set<int>>({10.2, 20.8, 30.9}),
-        equals({10, 20, 30}),
-      );
-    });
+      test('Converts Set<num> to Set<int>', () {
+        expect(converterHelper<Set<int>>({4.9, 5.1, 6.7}), equals({4, 5, 6}));
+        expect(
+          converterHelper<Set<int>>({10.2, 20.8, 30.9}),
+          equals({10, 20, 30}),
+        );
+      });
 
-    test('Converts Iterable<num> to Iterable<int>', () {
-      expect(converterHelper<Iterable<int>>([7.6, 8.3]), equals([7, 8]));
-      expect(converterHelper<Iterable<int>>({12.4, 15.9}), equals({12, 15}));
-    });
+      test('Converts Iterable<num> to Iterable<int>', () {
+        expect(converterHelper<Iterable<int>>([7.6, 8.3]), equals([7, 8]));
+        expect(converterHelper<Iterable<int>>({12.4, 15.9}), equals({12, 15}));
+      });
 
-    test('Handles empty collections', () {
-      expect(converterHelper<List<int>>(<int>[]), equals([]));
-      expect(converterHelper<Set<int>>(<int>{}), equals(<int>{}));
-      expect(converterHelper<Iterable<int>>(<int>[]), equals([]));
-    });
+      test('Handles empty collections', () {
+        expect(converterHelper<List<int>>(<int>[]), equals([]));
+        expect(converterHelper<Set<int>>(<int>{}), equals(<int>{}));
+        expect(converterHelper<Iterable<int>>(<int>[]), equals([]));
+      });
 
-    test('Returns value as-is when not using wasm', () {
-      expect(converterHelper<int>(5, enableWasmConverter: false), equals(5));
-      expect(
-        converterHelper<List<int>>([1, 2, 3], enableWasmConverter: false),
-        equals([1, 2, 3]),
-      );
-    });
+      test('Returns value as-is when not using wasm', () {
+        expect(converterHelper<int>(5, enableWasmConverter: false), equals(5));
+        expect(
+          converterHelper<List<int>>([1, 2, 3], enableWasmConverter: false),
+          equals([1, 2, 3]),
+        );
+      });
 
-    test('Custom converter function is applied', () {
-      int customConverter(dynamic value) => (value as int) * 2;
-      expect(
-        converterHelper<int>(4.5, customConverter: customConverter),
-        equals(8),
-      );
-    });
-  });
+      test('Custom converter function is applied', () {
+        int customConverter(dynamic value) => (value as int) * 2;
+        expect(
+          converterHelper<int>(4.5, customConverter: customConverter),
+          equals(8),
+        );
+      });
+    },
+  );
 
   test('Test IsolateManager.create: Basic Usage', () async {
     // Create IsolateContactor
@@ -758,7 +755,7 @@ void main() {
 
     await Future.wait(<Future<void>>[
       for (int i = 0; i < 10; i++)
-        isolateManager.compute(i).then((int value) {
+        isolateManager.compute(i).then((value) {
           expect(value, fibonacci(i));
         }),
     ]);
@@ -784,7 +781,7 @@ void main() {
 
     await Future.wait(<Future<void>>[
       for (int i = 0; i < 10; i++)
-        isolateManager.compute(i).then((int value) async {
+        isolateManager.compute(i).then((value) async {
           expect(value, equals(await fibonacciFuture(i)));
         }),
     ]);
@@ -800,13 +797,13 @@ void main() {
     )..start().ignore();
 
     isolateManager.stream
-        .listen((int value) {})
+        .listen((value) {})
         // Do not need to catch the error here
         .onError((error) {});
 
     await Future.wait(<Future<void>>[
       for (int i = 0; i < 10; i++)
-        isolateManager.compute(i).then((int value) {
+        isolateManager.compute(i).then((value) {
           expect(value, fibonacci(i));
         }),
     ]);
@@ -815,7 +812,7 @@ void main() {
 
     await Future.wait(<Future<void>>[
       for (int i = 5; i < 13; i++)
-        isolateManager.compute(i).then((int value) {
+        isolateManager.compute(i).then((value) {
           expect(value, fibonacci(i));
         }),
     ]);
@@ -834,38 +831,40 @@ void main() {
     await isolateManager.stop();
   });
 
-  test('Test IsolateManager.createCustom with automatically handlers',
-      () async {
-    // Create IsolateContactor
-    final isolateManager = IsolateManager<int, int>.createCustom(
-      isolateFunctionWithAutomaticallyHandlers,
-      concurrent: 4,
-    )..start().ignore();
+  test(
+    'Test IsolateManager.createCustom with automatically handlers',
+    () async {
+      // Create IsolateContactor
+      final isolateManager = IsolateManager<int, int>.createCustom(
+        isolateFunctionWithAutomaticallyHandlers,
+        concurrent: 4,
+      )..start().ignore();
 
-    isolateManager.stream
-        .listen((int value) {})
-        // Do not need to catch the error here
-        .onError((error) {});
+      isolateManager.stream
+          .listen((value) {})
+          // Do not need to catch the error here
+          .onError((error) {});
 
-    await Future.wait(<Future<void>>[
-      for (int i = 0; i < 10; i++)
-        isolateManager.compute(i).then((int value) {
-          expect(value, fibonacci(i));
-        }),
-    ]);
+      await Future.wait(<Future<void>>[
+        for (int i = 0; i < 10; i++)
+          isolateManager.compute(i).then((value) {
+            expect(value, fibonacci(i));
+          }),
+      ]);
 
-    await isolateManager.restart();
+      await isolateManager.restart();
 
-    await Future.wait(<Future<void>>[
-      for (int i = 5; i < 13; i++)
-        isolateManager.compute(i).then((int value) {
-          expect(value, fibonacci(i));
-        }),
-    ]);
+      await Future.wait(<Future<void>>[
+        for (int i = 5; i < 13; i++)
+          isolateManager.compute(i).then((value) {
+            expect(value, fibonacci(i));
+          }),
+      ]);
 
-    await expectLater(() => isolateManager.sendMessage(-1), throwsStateError);
-    await isolateManager.stop();
-  });
+      await expectLater(() => isolateManager.sendMessage(-1), throwsStateError);
+      await isolateManager.stop();
+    },
+  );
 
   test('Test with Exception future function', () async {
     final isolateManager = IsolateManager<int, List<int>>.create(
@@ -881,9 +880,7 @@ void main() {
   });
 
   test('Test with Exception function', () async {
-    final isolateManager = IsolateManager<int, List<int>>.create(
-      errorFunction,
-    );
+    final isolateManager = IsolateManager<int, List<int>>.create(errorFunction);
     await isolateManager.start();
 
     await expectLater(
@@ -894,15 +891,13 @@ void main() {
   });
 
   test('Test with Exception function with available callback', () async {
-    final isolateManager = IsolateManager<int, List<int>>.create(
-      errorFunction,
-    );
+    final isolateManager = IsolateManager<int, List<int>>.create(errorFunction);
     await isolateManager.start();
 
     await expectLater(
       () => isolateManager.compute(
         <int>[50, 50],
-        callback: (int value) {
+        callback: (value) {
           return true;
         },
       ),
@@ -931,27 +926,28 @@ void main() {
   });
 
   test(
-      'Test with Exception function with eagerError is true with available callback',
-      () async {
-    final isolateManager = IsolateManager<int, List<int>>.create(
-      errorFunction,
-      concurrent: 2,
-    );
-    await isolateManager.start();
-    final futures = <Future<dynamic>>[];
-
-    for (var i = 0; i < 100; i++) {
-      futures.add(
-        isolateManager.compute(<int>[i, 20], callback: (int value) => true),
+    'Test with Exception function with eagerError is true with available callback',
+    () async {
+      final isolateManager = IsolateManager<int, List<int>>.create(
+        errorFunction,
+        concurrent: 2,
       );
-    }
+      await isolateManager.start();
+      final futures = <Future<dynamic>>[];
 
-    await expectLater(
-      () async => Future.wait(futures, eagerError: true),
-      throwsStateError,
-    );
-    await isolateManager.stop();
-  });
+      for (var i = 0; i < 100; i++) {
+        futures.add(
+          isolateManager.compute(<int>[i, 20], callback: (value) => true),
+        );
+      }
+
+      await expectLater(
+        () async => Future.wait(futures, eagerError: true),
+        throwsStateError,
+      );
+      await isolateManager.stop();
+    },
+  );
 
   test('Test with all Exception functions with eagerError is true', () async {
     final isolateManager = IsolateManager<int, List<int>>.create(
@@ -973,27 +969,28 @@ void main() {
   });
 
   test(
-      'Test with all Exception functions with eagerError is true with available callback',
-      () async {
-    final isolateManager = IsolateManager<int, List<int>>.create(
-      errorFunction,
-      concurrent: 2,
-    );
-    await isolateManager.start();
-    final futures = <Future<dynamic>>[];
-
-    for (var i = 0; i < 100; i++) {
-      futures.add(
-        isolateManager.compute(<int>[50, 20], callback: (int value) => true),
+    'Test with all Exception functions with eagerError is true with available callback',
+    () async {
+      final isolateManager = IsolateManager<int, List<int>>.create(
+        errorFunction,
+        concurrent: 2,
       );
-    }
+      await isolateManager.start();
+      final futures = <Future<dynamic>>[];
 
-    await expectLater(
-      () async => Future.wait(futures, eagerError: true),
-      throwsStateError,
-    );
-    await isolateManager.stop();
-  });
+      for (var i = 0; i < 100; i++) {
+        futures.add(
+          isolateManager.compute(<int>[50, 20], callback: (value) => true),
+        );
+      }
+
+      await expectLater(
+        () async => Future.wait(futures, eagerError: true),
+        throwsStateError,
+      );
+      await isolateManager.stop();
+    },
+  );
 
   test('Test with Exception function with eagerError is false', () async {
     final isolateManager = IsolateManager<int, List<int>>.create(
@@ -1007,35 +1004,30 @@ void main() {
       futures.add(isolateManager.compute(<int>[i, 20]));
     }
 
-    await expectLater(
-      () async => Future.wait(futures),
-      throwsStateError,
-    );
+    await expectLater(() async => Future.wait(futures), throwsStateError);
     await isolateManager.stop();
   });
 
   test(
-      'Test with Exception function with eagerError is false with available callback',
-      () async {
-    final isolateManager = IsolateManager<int, List<int>>.create(
-      errorFunction,
-      concurrent: 2,
-    );
-    await isolateManager.start();
-    final futures = <Future<dynamic>>[];
-
-    for (var i = 0; i < 100; i++) {
-      futures.add(
-        isolateManager.compute(<int>[i, 20], callback: (int value) => true),
+    'Test with Exception function with eagerError is false with available callback',
+    () async {
+      final isolateManager = IsolateManager<int, List<int>>.create(
+        errorFunction,
+        concurrent: 2,
       );
-    }
+      await isolateManager.start();
+      final futures = <Future<dynamic>>[];
 
-    await expectLater(
-      () async => Future.wait(futures),
-      throwsStateError,
-    );
-    await isolateManager.stop();
-  });
+      for (var i = 0; i < 100; i++) {
+        futures.add(
+          isolateManager.compute(<int>[i, 20], callback: (value) => true),
+        );
+      }
+
+      await expectLater(() async => Future.wait(futures), throwsStateError);
+      await isolateManager.stop();
+    },
+  );
 
   test('Test with all Exception functions with eagerError is false', () async {
     final isolateManager = IsolateManager<int, List<int>>.create(
@@ -1049,35 +1041,30 @@ void main() {
       futures.add(isolateManager.compute(<int>[50, 20]));
     }
 
-    await expectLater(
-      () async => Future.wait(futures),
-      throwsStateError,
-    );
+    await expectLater(() async => Future.wait(futures), throwsStateError);
     await isolateManager.stop();
   });
 
   test(
-      'Test with all Exception functions with eagerError is false with available callback',
-      () async {
-    final isolateManager = IsolateManager<int, List<int>>.create(
-      errorFunction,
-      concurrent: 2,
-    );
-    await isolateManager.start();
-    final futures = <Future<dynamic>>[];
-
-    for (var i = 0; i < 100; i++) {
-      futures.add(
-        isolateManager.compute(<int>[50, 20], callback: (int value) => true),
+    'Test with all Exception functions with eagerError is false with available callback',
+    () async {
+      final isolateManager = IsolateManager<int, List<int>>.create(
+        errorFunction,
+        concurrent: 2,
       );
-    }
+      await isolateManager.start();
+      final futures = <Future<dynamic>>[];
 
-    await expectLater(
-      () async => Future.wait(futures),
-      throwsStateError,
-    );
-    await isolateManager.stop();
-  });
+      for (var i = 0; i < 100; i++) {
+        futures.add(
+          isolateManager.compute(<int>[50, 20], callback: (value) => true),
+        );
+      }
+
+      await expectLater(() async => Future.wait(futures), throwsStateError);
+      await isolateManager.stop();
+    },
+  );
 
   test('Test with IsolateCallback', () async {
     final isolateManager = IsolateManager<String, int>.createCustom(
@@ -1087,7 +1074,7 @@ void main() {
 
     final result = await isolateManager.compute(
       1,
-      callback: (String value) {
+      callback: (value) {
         final decoded = jsonDecode(value) as Map;
         // Do not return this [value] as the final result
         if (decoded.containsKey('source')) {
@@ -1100,10 +1087,7 @@ void main() {
     );
 
     final decoded = jsonDecode(result) as Map;
-    expect(
-      decoded.containsKey('data'),
-      equals(true),
-    );
+    expect(decoded.containsKey('data'), equals(true));
 
     await isolateManager.stop();
   });
@@ -1116,7 +1100,7 @@ void main() {
 
     final result = await isolateManager.compute(
       1,
-      callback: (String value) {
+      callback: (value) {
         final decoded = jsonDecode(value) as Map;
         // Do not return this [value] as the final result
         if (decoded.containsKey('source')) {
@@ -1129,74 +1113,68 @@ void main() {
     );
 
     final decoded = jsonDecode(result) as Map;
-    expect(
-      decoded.containsKey('data'),
-      equals(true),
-    );
-
-    await isolateManager.stop();
-  });
-
-  test('Test with IsolateCallback with simpler specified type function',
-      () async {
-    final isolateManager = IsolateManager<String, int>.createCustom(
-      isolateCallbackSimpleFunctionWithSpecifiedType,
-    );
-    await isolateManager.start();
-
-    final result = await isolateManager.compute(
-      1,
-      callback: (String value) {
-        final decoded = jsonDecode(value) as Map;
-        // Do not return this [value] as the final result
-        if (decoded.containsKey('source')) {
-          return false;
-        }
-
-        // Return this [value] as the final result
-        return true;
-      },
-    );
-
-    final decoded = jsonDecode(result) as Map;
-    expect(
-      decoded.containsKey('data'),
-      equals(true),
-    );
+    expect(decoded.containsKey('data'), equals(true));
 
     await isolateManager.stop();
   });
 
   test(
-      'Test with IsolateCallback with simpler specified type function no Worker',
-      () async {
-    final isolateManager = IsolateManager<String, int>.createCustom(
-      isolateCallbackSimpleFunctionWithSpecifiedType,
-    );
-    await isolateManager.start();
+    'Test with IsolateCallback with simpler specified type function',
+    () async {
+      final isolateManager = IsolateManager<String, int>.createCustom(
+        isolateCallbackSimpleFunctionWithSpecifiedType,
+      );
+      await isolateManager.start();
 
-    final result = await isolateManager.compute(
-      1,
-      callback: (String value) {
-        final decoded = jsonDecode(value) as Map;
-        // Do not return this [value] as the final result
-        if (decoded.containsKey('source')) {
-          return false;
-        }
+      final result = await isolateManager.compute(
+        1,
+        callback: (value) {
+          final decoded = jsonDecode(value) as Map;
+          // Do not return this [value] as the final result
+          if (decoded.containsKey('source')) {
+            return false;
+          }
 
-        // Return this [value] as the final result
-        return true;
-      },
-    );
+          // Return this [value] as the final result
+          return true;
+        },
+      );
 
-    final decoded = jsonDecode(result) as Map;
-    expect(
-      decoded.containsKey('data'),
-      equals(true),
-    );
+      final decoded = jsonDecode(result) as Map;
+      expect(decoded.containsKey('data'), equals(true));
 
-    await isolateManager.stop();
-  });
+      await isolateManager.stop();
+    },
+  );
+
+  test(
+    'Test with IsolateCallback with simpler specified type function no Worker',
+    () async {
+      final isolateManager = IsolateManager<String, int>.createCustom(
+        isolateCallbackSimpleFunctionWithSpecifiedType,
+      );
+      await isolateManager.start();
+
+      final result = await isolateManager.compute(
+        1,
+        callback: (value) {
+          final decoded = jsonDecode(value) as Map;
+          // Do not return this [value] as the final result
+          if (decoded.containsKey('source')) {
+            return false;
+          }
+
+          // Return this [value] as the final result
+          return true;
+        },
+      );
+
+      final decoded = jsonDecode(result) as Map;
+      expect(decoded.containsKey('data'), equals(true));
+
+      await isolateManager.stop();
+    },
+  );
 
   test('Test with returning a List<String>', () async {
     final isolate = IsolateManager.create(aStringList);
@@ -1241,6 +1219,245 @@ void main() {
     expect(result, equals(a1DTo2DList(list)));
   });
 
+  group('WASM Transferables -', () {
+    const isWasm = bool.fromEnvironment('dart.tool.dart2wasm');
+
+    test('enableWasmTransferables defaults to false', () async {
+      final isolateManager = IsolateManager<Uint8List, Uint8List>.create(
+        processBytes,
+      );
+
+      // Check that the default value is false
+      expect(isolateManager.enableWasmTransferables, equals(false));
+
+      await isolateManager.stop();
+    });
+
+    test('transferables are omitted on WASM by default', () async {
+      if (isWasm) {
+        final isolateManager = IsolateManager<Uint8List, Uint8List>.create(
+          processBytes,
+        );
+        await isolateManager.start();
+
+        final data = Uint8List(1024);
+        for (var i = 0; i < data.length; i++) {
+          data[i] = i % 256;
+        }
+
+        final originalLength = data.buffer.lengthInBytes;
+
+        // Without explicitly enabling transferables, they should be omitted on WASM
+        final result = await isolateManager.compute(
+          data,
+          transferables: [data.buffer],
+        );
+
+        expect(result.length, originalLength);
+
+        // Verify the processing worked
+        for (var i = 0; i < min(10, result.length); i++) {
+          expect(result[i], (i + 1) % 256);
+        }
+
+        // On WASM, when transferables are omitted, the source buffer should remain intact
+        expect(
+          data.buffer.lengthInBytes,
+          originalLength,
+          reason:
+              'Source buffer should not be detached when transferables are omitted on WASM',
+        );
+
+        await isolateManager.stop();
+      }
+    });
+
+    test(
+      'transferables can be enabled on WASM with enableWasmTransferables=true',
+      () async {
+        if (isWasm) {
+          final isolateManager = IsolateManager<Uint8List, Uint8List>.create(
+            processBytes,
+            enableWasmTransferables: true,
+          );
+          await isolateManager.start();
+
+          final data = Uint8List(1024);
+          for (var i = 0; i < data.length; i++) {
+            data[i] = i % 256;
+          }
+
+          final originalLength = data.buffer.lengthInBytes;
+
+          // With transferables explicitly enabled, they should work on WASM
+          final result = await isolateManager.compute(
+            data,
+            transferables: [data.buffer],
+          );
+
+          expect(result.length, originalLength);
+
+          // On WASM, when transferables are enabled, the behavior depends on the implementation
+          // The test mainly verifies that the parameter is respected
+          await isolateManager.stop();
+        }
+      },
+    );
+
+    test('transferables work normally on non-WASM platforms', () async {
+      if (!isWasm) {
+        final isolateManager = IsolateManager<Uint8List, Uint8List>.create(
+          processBytes,
+        );
+        await isolateManager.start();
+
+        final data = Uint8List(1024);
+        for (var i = 0; i < data.length; i++) {
+          data[i] = i % 256;
+        }
+
+        final originalLength = data.buffer.lengthInBytes;
+
+        // On non-WASM platforms, transferables should work regardless of the flag
+        final result = await isolateManager.compute(
+          data,
+          transferables: [data.buffer],
+        );
+
+        expect(result.length, originalLength);
+
+        // Verify the processing worked
+        for (var i = 0; i < min(10, result.length); i++) {
+          expect(result[i], (i + 1) % 256);
+        }
+
+        await isolateManager.stop();
+      }
+    });
+
+    test(
+      'transferables work normally on non-WASM platforms when enableWasmTransferables=true',
+      () async {
+        if (!isWasm) {
+          final isolateManager = IsolateManager<Uint8List, Uint8List>.create(
+            processBytes,
+            enableWasmTransferables: true,
+          );
+          await isolateManager.start();
+
+          final data = Uint8List(1024);
+          for (var i = 0; i < data.length; i++) {
+            data[i] = i % 256;
+          }
+
+          final originalLength = data.buffer.lengthInBytes;
+
+          // On non-WASM platforms, transferables should work regardless of the flag
+          final result = await isolateManager.compute(
+            data,
+            transferables: [data.buffer],
+          );
+
+          expect(result.length, originalLength);
+
+          // Verify the processing worked
+          for (var i = 0; i < min(10, result.length); i++) {
+            expect(result[i], (i + 1) % 256);
+          }
+
+          await isolateManager.stop();
+        }
+      },
+    );
+
+    test(
+      'static runFunction respects enableWasmTransferables parameter',
+      () async {
+        if (isWasm) {
+          final data = Uint8List(512);
+          for (var i = 0; i < data.length; i++) {
+            data[i] = i % 256;
+          }
+
+          final originalLength = data.buffer.lengthInBytes;
+
+          // Test with enableWasmTransferables=false (default)
+          final result1 = await IsolateManager.runFunction(processBytes, data);
+
+          expect(result1.length, originalLength);
+          // Buffer should not be detached when transferables are omitted
+          expect(
+            data.buffer.lengthInBytes,
+            originalLength,
+            reason:
+                'Buffer should not be detached when transferables are disabled',
+          );
+
+          // Reset data for second test
+          for (var i = 0; i < data.length; i++) {
+            data[i] = i % 256;
+          }
+
+          // Test with enableWasmTransferables=true
+          final result2 = await IsolateManager.runFunction(
+            processBytes,
+            data,
+            enableWasmTransferables: true,
+          );
+
+          expect(result2.length, originalLength);
+          // With transferables enabled, behavior depends on WASM implementation
+        }
+      },
+    );
+
+    test(
+      'static runCustomFunction respects enableWasmTransferables parameter',
+      () async {
+        if (isWasm) {
+          final data = Uint8List(256);
+          for (var i = 0; i < data.length; i++) {
+            data[i] = i % 256;
+          }
+
+          final originalLength = data.buffer.lengthInBytes;
+
+          // Test with enableWasmTransferables=false (default)
+          final result1 =
+              await IsolateManager.runCustomFunction<Uint8List, Uint8List>(
+                isolateFunctionBytes,
+                data,
+              );
+
+          expect(result1, isNotNull);
+          // Buffer should not be detached when transferables are omitted
+          expect(
+            data.buffer.lengthInBytes,
+            originalLength,
+            reason:
+                'Buffer should not be detached when transferables are disabled',
+          );
+
+          // Reset data for second test
+          for (var i = 0; i < data.length; i++) {
+            data[i] = i % 256;
+          }
+
+          // Test with enableWasmTransferables=true
+          final result2 =
+              await IsolateManager.runCustomFunction<Uint8List, Uint8List>(
+                isolateFunctionBytes,
+                data,
+                enableWasmTransferables: true,
+              );
+
+          expect(result2, isNotNull);
+          // With transferables enabled, behavior depends on WASM implementation
+        }
+      },
+    );
+  });
+
   group('Isolate Queue Strategy -', () {
     test('QueueStrategyUnlimited with multiple operations', () {
       final queueStrategies = UnlimitedStrategy<int, int>();
@@ -1264,8 +1481,8 @@ void main() {
     });
 
     test('QueueStrategyUnlimited alternating add and remove', () {
-      final queueStrategies = UnlimitedStrategy<int, int>()
-        ..add(IsolateQueue<int, int>(1, null));
+      final queueStrategies =
+          UnlimitedStrategy<int, int>()..add(IsolateQueue<int, int>(1, null));
       expect(queueStrategies.queuesCount, equals(1));
       expect(queueStrategies.getNext().params, equals(1));
 
@@ -1371,11 +1588,12 @@ void main() {
     });
 
     test('QueueStrategyDiscardIncoming edge case: adding when full', () {
-      final queueStrategies = RejectIncomingStrategy<int, int>(maxCount: 2)
-        ..add(IsolateQueue<int, int>(1, null))
-        ..add(IsolateQueue<int, int>(2, null))
-        // Should discard incoming value since max count is reached.
-        ..add(IsolateQueue<int, int>(3, null));
+      final queueStrategies =
+          RejectIncomingStrategy<int, int>(maxCount: 2)
+            ..add(IsolateQueue<int, int>(1, null))
+            ..add(IsolateQueue<int, int>(2, null))
+            // Should discard incoming value since max count is reached.
+            ..add(IsolateQueue<int, int>(3, null));
       expect(queueStrategies.queuesCount, equals(2));
       final result = <int>[1, 2];
       while (queueStrategies.hasNext()) {
@@ -1408,20 +1626,13 @@ void main() {
     });
 
     test('CustomIsolateException', () async {
-      IsolateException customException(
-        Object error,
-        StackTrace stackTrace,
-      ) {
+      IsolateException customException(Object error, StackTrace stackTrace) {
         return CustomIsolateException(error);
       }
 
-      IsolateManager.registerException(
-        customException,
-      );
+      IsolateManager.registerException(customException);
 
-      final isolate = IsolateManager.create(
-        throwsCustomIsolateException,
-      );
+      final isolate = IsolateManager.create(throwsCustomIsolateException);
 
       await expectLater(
         isolate.compute(const ImNum(10)),
@@ -1483,5 +1694,11 @@ void _addWorkerMappings() {
   IsolateManager.addWorkerMapping(
     isolateNullableInt,
     'workers/isolateNullableInt',
+  );
+  IsolateManager.addWorkerMapping(identityBytes, 'workers/identityBytes');
+  IsolateManager.addWorkerMapping(processBytes, 'workers/processBytes');
+  IsolateManager.addWorkerMapping(
+    isolateFunctionBytes,
+    'workers/isolateFunctionBytes',
   );
 }

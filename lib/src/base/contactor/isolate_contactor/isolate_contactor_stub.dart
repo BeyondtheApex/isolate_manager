@@ -13,22 +13,21 @@ class IsolateContactorInternal<R, P> extends IsolateContactor<R, P> {
     required dynamic isolateParam,
     required String workerName,
     required IsolateConverter<R> converter,
-    // This parameter is needed on the web platform.
-    // ignore: avoid_unused_constructor_parameters
     required IsolateConverter<R> workerConverter,
     required ReceivePort receivePort,
+    required super.debugName,
     super.debugMode,
-  })  : _isolateFunction = isolateFunction,
-        _workerName = workerName,
-        _isolateParam = isolateParam,
-        _receivePort = receivePort,
-        _isolateContactorController = IsolateContactorControllerImpl(
-          receivePort,
-          converter: converter,
-          workerConverter: workerConverter,
-          onDispose: null,
-          debugMode: debugMode,
-        );
+  }) : _isolateFunction = isolateFunction,
+       _workerName = workerName,
+       _isolateParam = isolateParam,
+       _receivePort = receivePort,
+       _isolateContactorController = IsolateContactorControllerImpl(
+         receivePort,
+         converter: converter,
+         workerConverter: workerConverter,
+         onDispose: null,
+         debugMode: debugMode,
+       );
 
   /// Create receive port
   final ReceivePort _receivePort;
@@ -56,6 +55,7 @@ class IsolateContactorInternal<R, P> extends IsolateContactor<R, P> {
     required String workerName,
     required IsolateConverter<R> converter,
     required IsolateConverter<R> workerConverter,
+    required String debugName,
     bool debugMode = false,
   }) async {
     final isolateContactor = IsolateContactorInternal<R, P>._(
@@ -64,6 +64,7 @@ class IsolateContactorInternal<R, P> extends IsolateContactor<R, P> {
       isolateParam: initialParams,
       converter: converter,
       workerConverter: workerConverter,
+      debugName: debugName,
       debugMode: debugMode,
       receivePort: ReceivePort(),
     );
@@ -75,10 +76,10 @@ class IsolateContactorInternal<R, P> extends IsolateContactor<R, P> {
 
   /// Initialize
   Future<void> _initial() async {
-    _isolate = await Isolate.spawn(
-      _isolateFunction,
-      <Object?>[_isolateParam, _receivePort.sendPort],
-    );
+    _isolate = await Isolate.spawn(_isolateFunction, <Object?>[
+      _isolateParam,
+      _receivePort.sendPort,
+    ], debugName: debugName);
 
     await _isolateContactorController.ensureInitialized.future;
     printDebug(() => 'Initialized');
@@ -98,9 +99,12 @@ class IsolateContactorInternal<R, P> extends IsolateContactor<R, P> {
   }
 
   @override
-  Future<R> sendMessage(P message) async {
+  Future<R> sendMessage(P message, {List<Object>? transferables}) async {
     printDebug(() => '[Main App] Message sent to isolate: $message');
-    _isolateContactorController.sendIsolate(message);
+    _isolateContactorController.sendIsolate(
+      message,
+      transferables: transferables,
+    );
     return _isolateContactorController.onMessage.first;
   }
 }

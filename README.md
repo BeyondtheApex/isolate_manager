@@ -114,6 +114,7 @@ To use isolates on the web, your Dart functions need to be compiled into JavaScr
 #### WebAssembly (WASM) Notes
 
 * **Type Handling:** When using WASM, all `int` types (including those in collections) are treated as `double`. Isolate Manager provides a built-in converter to handle this automatically; you can disable it by setting `enableWasmConverter: false` if needed.
+* **Transferables:** On WASM, transferables (zero-copy data transfer) add unnecessary overhead and provide no performance benefit. By default, transferables are omitted when targeting WASM. You can re-enable them by setting `enableWasmTransferables: true` if needed.
 * **Development Server Headers:** If your app hangs when running with `flutter run -d chrome --wasm`, you might need to set specific headers. Try:
 
   ```shell
@@ -121,6 +122,8 @@ To use isolates on the web, your Dart functions need to be compiled into JavaScr
   ```
 
 ## Usage Examples
+
+The optional `debugName` parameter defaults to `normal` for `create`/`run`, `custom` for `createCustom`/`runCustomFunction`, and `shared` for `createShared`.
 
 ### One-off Isolate (Simple Task)
 
@@ -466,6 +469,86 @@ void main() async {
 
 An `UnsupportedImTypeException` is thrown if `ImList.wrap` or `ImMap.wrap` encounters a type that cannot be converted.
 
+### Zero-Copy Data Transfers (Transferables)
+
+For large `Uint8List` or `ByteBuffer` payloads, pass a `transferables` list to `compute()` to enable zero-copy transport instead of copying bytes across isolate boundaries.
+
+#### Basic usage
+
+```dart
+@pragma('vm:entry-point')
+@isolateManagerWorker
+Uint8List processImage(Uint8List data) {
+  // ... image processing ...
+  return data;
+}
+
+final manager = IsolateManager.create(processImage, workerName: 'processImage');
+await manager.start();
+
+final pixels = Uint8List(1920 * 1080 * 4); // ~8 MB RGBA frame
+
+final result = await manager.compute(
+  pixels,
+  transferables: [pixels.buffer], // zero-copy send
+);
+```
+
+On **native (VM)** the buffer is wrapped in a `TransferableTypedData` and sent O(1) — no byte copying. On **web (dart2js)** the `ArrayBuffer` is transferred via the `postMessage` transfer list, also O(1), and the source buffer is **detached** (its `lengthInBytes` becomes 0) after the call returns.
+
+#### Auto-extraction with `sendResultWithAutoTransfer`
+
+Inside a custom isolate, the `AutoTransferExtension` recursively finds every `Uint8List` / `ByteBuffer` in the result and transfers them automatically — no manual bookkeeping needed:
+
+```dart
+import 'package:isolate_manager/isolate_manager.dart';
+
+@pragma('vm:entry-point')
+void processingWorker(dynamic params) {
+  final controller =
+      IsolateManagerController<Map<String, Object?>, Uint8List>(params);
+
+  controller.onIsolateMessage.listen((input) {
+    final output = Uint8List(input.length);
+    for (var i = 0; i < output.length; i++) {
+      output[i] = (input[i] + 1) % 256;
+    }
+
+    // Finds all Uint8List/ByteBuffer in the map and transfers them zero-copy.
+    controller.sendResultWithAutoTransfer({'result': output, 'size': output.length});
+  });
+
+  controller.initialized();
+}
+```
+
+#### Pros, cons, and platform behaviour
+
+|                                       | Native (VM)                                                                  | Web — dart2js                                                       | Web — dart2wasm                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **No transferables**                  | Bytes deep-copied O(n)                                                       | Bytes serialised & copied O(n)                                      | Bytes copied O(n)                                                          |
+| **`transferables: [data.buffer]`**    | Zero-copy via `TransferableTypedData` (O(1) transport; small codec overhead) | Zero-copy via `ArrayBuffer` transfer (O(1)); source buffer detached | ⚠ No benefit — WASM linear memory must be copied to the JS heap regardless |
+| **Pre-built `TransferableTypedData`** | Fastest — skips codec overhead entirely                                      | N/A                                                                 | N/A                                                                        |
+
+**Native (VM):**
+
+* Eliminates the O(n) copy for large buffers; measurable improvement at ~1 MB+.
+* Pre-building `TransferableTypedData` before calling `compute()` removes the codec overhead and is the fastest option.
+* ⚠️ Small buffers (< ~100 KB) may see no net gain or a slight regression due to codec overhead.
+* ⚠️ The source buffer is consumed by `TransferableTypedData`; do not reuse the original `Uint8List` after calling `compute()` with it as a transferable.
+
+**Web — dart2js:**
+
+* Source `ArrayBuffer` is transferred in O(1); the worker receives the original memory.
+* Large speedups (2–10×) for MB-range payloads compared to copy-based transfer.
+* ⚠️ Source buffer is **neutered** after `compute()` returns — `data.buffer.lengthInBytes` becomes 0. Keep a reference to the result instead.
+
+**Web — dart2wasm:**
+
+* ⚠️ WASM uses linear memory that is opaque to the JS engine. Every transfer still requires a copy from the WASM heap to a JS `ArrayBuffer`, so using `transferables` adds codec overhead with no speed benefit.
+* Prefer omitting `transferables` when targeting WASM.
+* ⚠️ Note: Transferables are omitted by default when targeting WASM to avoid codec overhead. To enable transferables on WASM, set `enableWasmTransferables: true` in the `IsolateManager` constructor.
+
 ### Handling Exceptions (Web)
 
 To ensure custom exceptions are correctly propagated from Web Workers:
@@ -578,6 +661,14 @@ dart run isolate_manager:generate
 * `--debug`: Retain temporary files created during generation for debugging purposes.
 * `--worker-mappings-experiment=lib/main.dart` (Experimental): Attempt to auto-generate `workerMappings` for `IsolateManager.createShared` by scanning the specified Dart file.
 
+You can also pass additional arguments to the underlying Dart compiler by adding `--` after the generator command. For example:
+
+```shell
+dart run isolate_manager:generate -- --omit-implicit-checks --no-source-maps
+```
+
+These arguments will be forwarded to the Dart process (useful for `dart2js` / `dart compile js` or other Dart compiler options).
+
 ## Additional Tips
 
 * **Queue Length:** Check `isolateManagerInstance.queuesLength` to get the current number of tasks in the queue.
@@ -586,31 +677,31 @@ dart run isolate_manager:generate
 
 ## Performance Benchmark
 
-The following benchmarks demonstrate the performance of recursive Fibonacci calculations across different concurrency approaches and environments. Measurements are in microseconds (µs) on a MacBook M1 Pro 14" with 16GB RAM.
+The following benchmarks demonstrate the performance of recursive Fibonacci calculations across different concurrency approaches and environments. Measurements are in microseconds (µs) and represent the **median of 30 samples** to ensure stability. Benchmarked on a MacBook M1 Pro 14" with 16GB RAM.
 
 * **VM (Native)**
 
-| Fibonacci |  Main App | One Isolate | Three Isolates | IsolateManager.runFunction | IsolateManager.run | Isolate.run |
-| :-------: | --------: | ----------: | -------------: | -------------------------: | -----------------: | ----------: |
-|     30    |   551,928 |     541,882 |        195,646 |                    553,949 |            547,982 |     538,820 |
-|     33    | 2,273,956 |   2,268,299 |        816,148 |                  2,288,071 |          2,282,269 |   2,271,376 |
-|     36    | 9,761,067 |   9,669,422 |      3,453,328 |                  9,643,678 |          9,606,443 |   9,648,076 |
+| Fibonacci | Main App | One Isolate | Three Isolates | IsolateManager.runFunction | IsolateManager.run | Isolate.run |
+| :-------: | -------: | ----------: | -------------: | -------------------------: | -----------------: | ----------: |
+|    26     |    1,577 |       1,576 |            572 |                      1,731 |              1,661 |       1,615 |
+|    28     |    4,140 |       4,166 |          1,477 |                      4,188 |              4,178 |       4,132 |
+|    30     |   10,892 |      10,881 |          4,530 |                     11,207 |             10,793 |      10,765 |
 
 * **Chrome (with Worker support, JS compiler)**
 
-| Fibonacci |   Main App | One Isolate | Three Isolates | IsolateManager.runFunction | IsolateManager.run | Isolate.run (Unsupported) |
-| :-------: | ---------: | ----------: | -------------: | -------------------------: | -----------------: | ------------------------: |
-|     30    |  2,274,100 |     573,900 |        211,700 |                  1,160,800 |          1,181,800 |                         0 |
-|     33    |  9,493,100 |   2,330,900 |        821,400 |                  2,860,800 |          2,866,300 |                         0 |
-|     36    | 40,051,000 |   9,756,200 |      3,452,100 |                 10,281,200 |         10,270,300 |                         0 |
+| Fibonacci | Main App | One Isolate | Three Isolates | IsolateManager.runFunction | IsolateManager.run | Isolate.run (Unsupported) |
+| :-------: | -------: | ----------: | -------------: | -------------------------: | -----------------: | ------------------------: |
+|    26     |    5,108 |       1,333 |            596 |                      8,607 |              8,797 |                         0 |
+|    28     |   13,486 |       3,256 |          1,340 |                     10,156 |             10,683 |                         0 |
+|    30     |   34,990 |       8,500 |          4,000 |                     15,230 |             15,000 |                         0 |
 
 * **Chrome (with Worker support, WASM compiler)**
 
-| Fibonacci |  Main App | One Isolate | Three Isolates | IsolateManager.runFunction | IsolateManager.run | Isolate.run (Unsupported) |
-| :-------: | --------: | ----------: | -------------: | -------------------------: | -----------------: | ------------------------: |
-|     30    |   242,701 |     552,800 |        200,300 |                  1,099,100 |          1,081,800 |                         0 |
-|     33    | 1,027,300 |   2,315,700 |        819,800 |                  2,863,700 |          2,852,600 |                         0 |
-|     36    | 4,396,300 |   9,709,700 |      3,446,300 |                 10,284,000 |         10,375,800 |                         0 |
+| Fibonacci | Main App | One Isolate | Three Isolates | IsolateManager.runFunction | IsolateManager.run | Isolate.run (Unsupported) |
+| :-------: | -------: | ----------: | -------------: | -------------------------: | -----------------: | ------------------------: |
+|    26     |      504 |       1,320 |            594 |                      8,424 |              8,422 |                         0 |
+|    28     |    1,303 |       3,220 |          1,323 |                     10,660 |             10,266 |                         0 |
+|    30     |    3,379 |       8,370 |          3,960 |                     14,800 |             15,010 |                         0 |
 
 For more details, see the [full benchmark information](https://github.com/lamnhan066/isolate_manager/tree/main/benchmark).
 

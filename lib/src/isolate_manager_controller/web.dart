@@ -1,28 +1,29 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:isolate_manager/isolate_manager.dart';
 import 'package:isolate_manager/src/base/isolate_contactor.dart';
+import 'package:isolate_manager/src/models/initial_params_mixin.dart';
 import 'package:isolate_manager/src/utils/check_subtype.dart';
+import 'package:isolate_manager/src/utils/extract_array_buffers.dart';
 import 'package:web/web.dart';
 
 /// This method only use to create a custom isolate.
 class IsolateManagerControllerImpl<R, P>
+    with InitialParamsMixin
     implements IsolateManagerController<R, P> {
   /// This method only use to create a custom isolate.
   ///
   /// The [params] is a default parameter of a custom isolate function.
   /// `onDispose` will be called when the controller is disposed.
-  IsolateManagerControllerImpl(
-    dynamic params, {
-    void Function()? onDispose,
-  }) : _delegate = params.runtimeType == DedicatedWorkerGlobalScope
-            ? _IsolateManagerWorkerController<R, P>(
+  IsolateManagerControllerImpl(dynamic params, {void Function()? onDispose})
+    : _delegate =
+          params.runtimeType == DedicatedWorkerGlobalScope
+              ? _IsolateManagerWorkerController<R, P>(
                 params as DedicatedWorkerGlobalScope,
                 onDispose: onDispose,
               )
-            : IsolateContactorController<R, P>(params, onDispose: onDispose);
+              : IsolateContactorController<R, P>(params, onDispose: onDispose);
 
   /// Delegation of IsolateContactor.
   final IsolateContactorController<R, P> _delegate;
@@ -48,7 +49,8 @@ class IsolateManagerControllerImpl<R, P>
 
   /// Send values from Isolate to the main application (to `onMessage`).
   @override
-  void sendResult(R result) => _delegate.sendResult(result);
+  void sendResult(R result, {List<Object>? transferables}) =>
+      _delegate.sendResult(result, transferables: transferables);
 
   /// Send the `Exception` to the main app.
   @override
@@ -94,47 +96,18 @@ class IsolateManagerControllerImpl<R, P>
 class _IsolateManagerWorkerController<R, P>
     implements IsolateContactorController<R, P> {
   _IsolateManagerWorkerController(this.self, {this.onDispose}) {
-    // 保存原始的 onmessage 处理器
     _originalOnMessage = (MessageEvent event) {
-      // --- 这是我们添加的核心修改 ---
-      try {
-        // 先调用自定义的原始处理器（如果有）
-        if (_rawMessageHandler != null) {
-          final shouldContinue = _rawMessageHandler!(event);
-          if (!shouldContinue) {
-            return; // 停止进一步处理
-          }
-        }
-
-        // 正常的消息处理
-        final rawData = event.data.dartify();
-        dynamic processedData = rawData;
-
-        // 检查接收到的原始数据是否为字符串
-        if (rawData is String) {
-          try {
-            // 如果是字符串，尝试用 JSON 解码
-            processedData = json.decode(rawData);
-          } catch (e) {
-            // 解码失败，说明它就是个普通字符串，不是JSON
-            // 保持 processedData 为原始字符串，不做处理
-            print(
-                '[IsolateManager-Worker-Patch] Received a non-JSON string: $e');
-          }
-        }
-
-        // 确保 ImType 逻辑仍然有效
-        if (isImTypeSubtype<P>()) {
-          processedData = ImType.wrap(processedData as Object);
-        }
-
-        // 将最终处理过的数据添加到流中
-        _streamController.sink.add(processedData as P);
-      } catch (e, s) {
-        // 如果整个过程出错，将错误发送到流中
-        _streamController.sink.addError(e, s);
+      // 先调用自定义的 rawMessageHandler（如果有）
+      if (_rawMessageHandler != null) {
+        final shouldContinue = _rawMessageHandler!(event);
+        if (!shouldContinue) return; // 停止进一步处理
       }
-      // --- 核心修改结束 ---
+      // 正常消息处理流程（上游风格）
+      dynamic result = event.data.dartify();
+      if (isImTypeSubtype<P>()) {
+        result = ImType.wrap(result as Object);
+      }
+      _streamController.sink.add(result as P);
     }.toJS;
 
     self.onmessage = _originalOnMessage;
@@ -197,13 +170,16 @@ class _IsolateManagerWorkerController<R, P>
 
   /// Send result to the main app
   @override
-  void sendResult(R m) {
-    if (m is ImType) {
-      self.postMessage(
-        <String, Object?>{'type': 'data', 'value': m.unwrap}.jsify(),
-      );
+  void sendResult(R m, {List<Object>? transferables}) {
+    final value = m is ImType ? m.unwrap : m;
+    final payload = <String, Object?>{'type': 'data', 'value': value}.jsify();
+
+    if (transferables != null && transferables.isNotEmpty) {
+      // Extract ArrayBuffers from transferables for zero-copy transfer
+      final jsTransferables = extractArrayBuffers(transferables);
+      self.postMessage(payload, jsTransferables);
     } else {
-      self.postMessage(<String, Object?>{'type': 'data', 'value': m}.jsify());
+      self.postMessage(payload);
     }
   }
 
@@ -232,9 +208,11 @@ class _IsolateManagerWorkerController<R, P>
   Stream<R> get onMessage => throw UnimplementedError();
 
   @override
-  void sendIsolate(dynamic message) => throw UnimplementedError();
+  void sendIsolate(dynamic message, {List<Object>? transferables}) =>
+      throw UnimplementedError();
 
   @override
   void sendIsolateState(IsolateState state) => throw UnimplementedError();
 }
+
 // coverage:ignore-end

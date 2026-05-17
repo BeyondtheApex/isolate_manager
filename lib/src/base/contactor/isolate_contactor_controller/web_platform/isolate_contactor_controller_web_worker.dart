@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:isolate_manager/src/base/contactor/isolate_contactor_controller/isolate_contactor_controller_web.dart';
 import 'package:isolate_manager/src/base/isolate_contactor.dart';
 import 'package:isolate_manager/src/models/isolate_types.dart';
 import 'package:isolate_manager/src/utils/check_subtype.dart';
+import 'package:isolate_manager/src/utils/extract_array_buffers.dart';
 import 'package:isolate_manager/src/utils/print.dart';
 import 'package:web/web.dart';
 
@@ -18,15 +18,16 @@ class IsolateContactorControllerImplWorker<R, P>
     required void Function()? onDispose,
     required R Function(dynamic) workerConverter,
     required bool debugMode,
-  })  : _debugMode = debugMode,
-        _workerConverter = workerConverter,
-        _onDispose = onDispose,
-        _delegate = params is List
-            ? (params.last as IsolateContactorControllerImpl).controller
-                as Worker
-            : params as Worker,
-        _initialParams = params is List ? params.first : null,
-        _mainStreamController = StreamController<R>.broadcast() {
+  }) : _debugMode = debugMode,
+       _workerConverter = workerConverter,
+       _onDispose = onDispose,
+       _delegate =
+           params is List
+               ? (params.last as IsolateContactorControllerImpl).controller
+                   as Worker
+               : params as Worker,
+       _initialParams = params is List ? params.first : null,
+       _mainStreamController = StreamController<R>.broadcast() {
     _delegate.onmessage = _handleMessage.toJS;
   }
 
@@ -50,11 +51,15 @@ class IsolateContactorControllerImplWorker<R, P>
   Stream<R> get onMessage => _mainStreamController.stream;
 
   @override
-  void sendIsolate(P message) {
-    if (message is ImType) {
-      _delegate.postMessage(message.unwrap.jsify());
+  void sendIsolate(P message, {List<Object>? transferables}) {
+    final jsMessage =
+        message is ImType ? message.unwrap.jsify() : message.jsify();
+
+    if (transferables != null && transferables.isNotEmpty) {
+      final jsTransferables = extractArrayBuffers(transferables);
+      _delegate.postMessage(jsMessage, jsTransferables);
     } else {
-      _delegate.postMessage(message.jsify());
+      _delegate.postMessage(jsMessage);
     }
   }
 
@@ -74,7 +79,7 @@ class IsolateContactorControllerImplWorker<R, P>
       throw UnimplementedError('initialized method is not implemented');
 
   @override
-  void sendResult(R message) =>
+  void sendResult(R message, {List<Object>? transferables}) =>
       throw UnimplementedError('sendResult is not implemented');
 
   @override
@@ -90,7 +95,6 @@ class IsolateContactorControllerImplWorker<R, P>
 
   /// Centralizes the event processing for the incoming worker messages.
   // Can't return `Future<void>` because of the `onmessage` signature.
-  // ignore: avoid_void_async
   void _handleMessage(MessageEvent event) {
     debugPrinter(
       () => '[Main App] Message received from the Web Worker: ${event.data}',
@@ -118,7 +122,7 @@ class IsolateContactorControllerImplWorker<R, P>
 
       if (IsolateState.dispose.isValidMap(data)) {
         _onDispose?.call();
-        close();
+        unawaited(close());
         return;
       }
 
@@ -131,6 +135,8 @@ class IsolateContactorControllerImplWorker<R, P>
       _mainStreamController.addError(
         IsolateException('Unhandled $data from the Isolate'),
       );
+      // To catch both Error and Exception
+      // ignore: avoid_catches_without_on_clauses
     } catch (e, stackTrace) {
       _mainStreamController.addError(
         IsolateException(e, stackTrace),

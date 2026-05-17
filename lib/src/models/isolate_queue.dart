@@ -5,8 +5,8 @@ import 'package:isolate_manager/src/isolate_manager.dart';
 /// Use for queuing your `compute`.
 class IsolateQueue<R, P> {
   /// Use for queuing your `compute`.
-  IsolateQueue(this.params, IsolateCallback<R>? callback)
-      : callback = callback ?? _defaultCallback<R>;
+  IsolateQueue(this.params, IsolateCallback<R>? callback, {this.transferables})
+    : callback = callback ?? _defaultCallback<R>;
 
   /// A default callback.
   static bool _defaultCallback<R>(R _) => true;
@@ -19,4 +19,7 @@ class IsolateQueue<R, P> {
 
   /// Control when to return the needed result.
   final IsolateCallback<R> callback;
+
+  /// Optional list of transferable objects for zero-copy transfer on web.
+  final List<Object>? transferables;
 }

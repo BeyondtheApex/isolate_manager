@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:isolate_manager/isolate_manager.dart';
 
@@ -11,9 +14,7 @@ ImNum throwsIsolateException(ImNum number) {
 
 @isolateManagerWorker
 ImNum throwsUnsupportedImTypeException(ImNum number) {
-  throw const UnsupportedImTypeException(
-    'UnsupportedImTypeException',
-  );
+  throw const UnsupportedImTypeException('UnsupportedImTypeException');
 }
 
 @isolateManagerWorker
@@ -99,17 +100,19 @@ List<dynamic> a1DTo2DList(List<dynamic> params) {
 Future<void> isolateFunction(dynamic params) async {
   await IsolateManagerFunction.customFunction<int, int>(
     params,
-    onEvent: (IsolateManagerController<int, int> controller, int message) {
+    onEvent: (controller, message) {
       try {
         final result = fibonacci(message);
         controller.sendResult(result);
+        // To catch both Error and Exception
+        // ignore: avoid_catches_without_on_clauses
       } catch (err, stack) {
         controller.sendResultError(IsolateException(err, stack));
       }
       return 0;
     },
-    onInit: (IsolateManagerController<int, int> controller) {},
-    onDispose: (IsolateManagerController<int, int> controller) {},
+    onInit: (controller) {},
+    onDispose: (controller) {},
     autoHandleException: false,
     autoHandleResult: false,
   );
@@ -117,70 +120,97 @@ Future<void> isolateFunction(dynamic params) async {
 
 @pragma('vm:entry-point')
 void isolateFunctionWithAutomaticallyHandlers(dynamic params) {
-  IsolateManagerFunction.customFunction<int, int>(
-    params,
-    onEvent: (IsolateManagerController<int, int> controller, int message) {
-      return fibonacci(message);
-    },
-    onInit: (IsolateManagerController<int, int> controller) {},
-    onDispose: (IsolateManagerController<int, int> controller) {},
+  unawaited(
+    IsolateManagerFunction.customFunction<int, int>(
+      params,
+      onEvent: (controller, message) {
+        return fibonacci(message);
+      },
+      onInit: (controller) {},
+      onDispose: (controller) {},
+    ),
+  );
+}
+
+@pragma('vm:entry-point')
+void reportCurrentIsolateDebugNameCustom(dynamic params) {
+  unawaited(
+    IsolateManagerFunction.customFunction<String?, int>(
+      params,
+      onEvent: (controller, message) {
+        controller.sendResult(Isolate.current.debugName);
+        return Isolate.current.debugName;
+      },
+      onInit: (controller) {},
+      onDispose: (controller) {},
+      autoHandleException: false,
+      autoHandleResult: false,
+    ),
   );
 }
 
 @isolateManagerCustomWorker
 void isolateCallbackFunction(dynamic params) {
-  IsolateManagerFunction.customFunction(
-    params,
-    onEvent: (
-      IsolateManagerController<Object?, Object?> controller,
-      Object? message,
-    ) {
-      try {
-        for (var i = 0; i < 10; i++) {
-          controller.sendResult(jsonEncode(<String, String>{'source': '$i'}));
+  unawaited(
+    IsolateManagerFunction.customFunction(
+      params,
+      onEvent: (
+        controller,
+        message,
+      ) {
+        try {
+          for (var i = 0; i < 10; i++) {
+            controller.sendResult(jsonEncode(<String, String>{'source': '$i'}));
+          }
+
+          controller.sendResult(jsonEncode(<String, String>{'data': 'data'}));
+          // To catch both Error and Exception
+          // ignore: avoid_catches_without_on_clauses
+        } catch (err, stack) {
+          controller.sendResultError(IsolateException(err, stack));
         }
 
-        controller.sendResult(jsonEncode(<String, String>{'data': 'data'}));
-      } catch (err, stack) {
-        controller.sendResultError(IsolateException(err, stack));
-      }
-
-      // Just returns something that unused to complete this method.
-      return '';
-    },
-    autoHandleException: false,
-    autoHandleResult: false,
+        // Just returns something that unused to complete this method.
+        return '';
+      },
+      autoHandleException: false,
+      autoHandleResult: false,
+    ),
   );
 }
 
 @isolateManagerCustomWorker
 void isolateCallbackSimpleFunction(dynamic params) {
-  IsolateManagerFunction.customFunction(
-    params,
-    onEvent: (
-      IsolateManagerController<Object?, Object?> controller,
-      Object? message,
-    ) {
-      for (var i = 0; i < 10; i++) {
-        controller.sendResult(jsonEncode(<String, String>{'source': '$i'}));
-      }
+  unawaited(
+    IsolateManagerFunction.customFunction(
+      params,
+      onEvent: (
+        controller,
+        message,
+      ) {
+        for (var i = 0; i < 10; i++) {
+          controller.sendResult(jsonEncode(<String, String>{'source': '$i'}));
+        }
 
-      return jsonEncode(<String, Object?>{'data': message});
-    },
+        return jsonEncode(<String, Object?>{'data': message});
+      },
+    ),
   );
 }
 
 @isolateManagerCustomWorker
 void isolateCallbackSimpleFunctionWithSpecifiedType(dynamic params) {
-  IsolateManagerFunction.customFunction<String, int>(
-    params,
-    onEvent: (IsolateManagerController<String, int> controller, int message) {
-      for (var i = 0; i < 10; i++) {
-        controller.sendResult(jsonEncode(<String, String>{'source': '$i'}));
-      }
+  unawaited(
+    IsolateManagerFunction.customFunction<String, int>(
+      params,
+      onEvent: (controller, message) {
+        for (var i = 0; i < 10; i++) {
+          controller.sendResult(jsonEncode(<String, String>{'source': '$i'}));
+        }
 
-      return jsonEncode(<String, int>{'data': message});
-    },
+        return jsonEncode(<String, int>{'data': message});
+      },
+    ),
   );
 }
 
@@ -213,9 +243,7 @@ ImList isolateTypeList(ImList numbers) {
 ImMap isolateTypeMap(ImList numbers) {
   return ImMap(
     Map.fromEntries(
-      numbers.unwrap.map(
-        (e) => MapEntry(ImString('$e'), ImNum(e as num)),
-      ),
+      numbers.unwrap.map((e) => MapEntry(ImString('$e'), ImNum(e as num))),
     ),
   );
 }
@@ -223,9 +251,7 @@ ImMap isolateTypeMap(ImList numbers) {
 @isolateManagerWorker
 ImMap isolateTypeMapToMap(ImMap numbers) {
   return ImMap(
-    numbers.toMap().map(
-          (k, v) => MapEntry(ImString('${k.unwrap}'), v),
-        ),
+    numbers.toMap().map((k, v) => MapEntry(ImString('${k.unwrap}'), v)),
   );
 }
 
@@ -278,4 +304,31 @@ String concat(List<String> params) {
 @isolateManagerSharedWorker
 List<List<String>> complexReturn(List<List<String>> params) {
   return params;
+}
+
+@isolateManagerWorker
+Uint8List identityBytes(Uint8List data) => data;
+
+@isolateManagerWorker
+Uint8List processBytes(Uint8List data) {
+  final result = Uint8List(data.length);
+  for (var i = 0; i < data.length; i++) {
+    result[i] = (data[i] + 1) % 256;
+  }
+  return result;
+}
+
+@isolateManagerCustomWorker
+void isolateFunctionBytes(dynamic params) {
+  unawaited(
+    IsolateManagerFunction.customFunction<Uint8List, Uint8List>(
+      params,
+      onEvent: (
+        controller,
+        message,
+      ) {
+        return processBytes(message);
+      },
+    ),
+  );
 }

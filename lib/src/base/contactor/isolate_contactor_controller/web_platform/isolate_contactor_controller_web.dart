@@ -14,13 +14,13 @@ class IsolateContactorControllerImplFuture<R, P>
     required void Function()? onDispose,
     required R Function(dynamic)? converter,
     required bool debugMode,
-  })  : _debugMode = debugMode,
-        _converter = converter,
-        _onDispose = onDispose,
-        _delegate = _extractController(params),
-        _initialParams = params is List ? params.first : null,
-        _mainStreamController = StreamController<R>.broadcast(),
-        _isolateStreamController = StreamController<P>.broadcast() {
+  }) : _debugMode = debugMode,
+       _converter = converter,
+       _onDispose = onDispose,
+       _delegate = _extractController(params),
+       _initialParams = params is List ? params.first : null,
+       _mainStreamController = StreamController<R>.broadcast(),
+       _isolateStreamController = StreamController<P>.broadcast() {
     _streamSubscription = _delegate.stream.listen(_handleEvent);
   }
 
@@ -64,8 +64,16 @@ class IsolateContactorControllerImplFuture<R, P>
   }
 
   @override
-  void sendIsolate(P message) {
+  void sendIsolate(P message, {List<Object>? transferables}) {
     if (_delegate.isClosed) return;
+
+    if (transferables != null && transferables.isNotEmpty) {
+      debugPrinter(
+        () =>
+            '[Main App] transferables ignored in Web Future mode. Set workerName to use Worker transfer lists.',
+        debug: _debugMode,
+      );
+    }
 
     _delegate.sink.add({IsolatePort.isolate: message});
   }
@@ -78,8 +86,16 @@ class IsolateContactorControllerImplFuture<R, P>
   }
 
   @override
-  void sendResult(R message) {
+  void sendResult(R message, {List<Object>? transferables}) {
     if (_delegate.isClosed) return;
+
+    if (transferables != null && transferables.isNotEmpty) {
+      debugPrinter(
+        () =>
+            '[Isolate] transferables ignored in Web Future mode. Set workerName to use Worker transfer lists.',
+        debug: _debugMode,
+      );
+    }
 
     _delegate.sink.add({IsolatePort.main: message});
   }
@@ -129,6 +145,8 @@ class IsolateContactorControllerImplFuture<R, P>
       default:
         try {
           _mainStreamController.add(_converter?.call(value) ?? value as R);
+          // To catch both Error and Exception
+          // ignore: avoid_catches_without_on_clauses
         } catch (e, stack) {
           _mainStreamController.addError(e, stack);
         }
@@ -147,6 +165,8 @@ class IsolateContactorControllerImplFuture<R, P>
       default:
         try {
           _isolateStreamController.add(value as P);
+          // To catch both Error and Exception
+          // ignore: avoid_catches_without_on_clauses
         } catch (e, stack) {
           _isolateStreamController.addError(e, stack);
         }

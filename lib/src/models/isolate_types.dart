@@ -1,3 +1,4 @@
+// Reason: ImType and its subclasses require custom equality logic for isolate-safe value comparison.
 // ignore_for_file: avoid_equals_and_hash_code_on_mutable_classes
 
 import 'package:isolate_manager/src/models/isolate_exceptions.dart';
@@ -26,20 +27,22 @@ sealed class ImType<T extends Object> {
   /// Throws an [UnsupportedImTypeException] if the object's type is not supported.
   static R wrap<R extends ImType<Object>>(Object? object) {
     return switch (object) {
-      final R r => r,
-      final num n => ImNum(n),
-      final String s => ImString(s),
-      final bool b => ImBool(b),
-      final Iterable<dynamic> list => ImList(
-          list.map((e) => wrap(e as Object?)),
-        ),
-      final Map<dynamic, dynamic> map => ImMap(
-          map.map((k, v) => MapEntry(wrap(k as Object?), wrap(v as Object?))),
-        ),
-      _ => throw UnsupportedImTypeException(
-          'Unsupported type ${object.runtimeType} when wrapping an IsolateType',
-        ),
-    } as R;
+          final R r => r,
+          final num n => ImNum(n),
+          final String s => ImString(s),
+          final bool b => ImBool(b),
+          final Iterable<dynamic> list => ImList(
+            list.map((e) => wrap(e as Object?)),
+          ),
+          final Map<dynamic, dynamic> map => ImMap(
+            map.map((k, v) => MapEntry(wrap(k as Object?), wrap(v as Object?))),
+          ),
+          _ =>
+            throw UnsupportedImTypeException(
+              'Unsupported type ${object.runtimeType} when wrapping an IsolateType',
+            ),
+        }
+        as R;
   }
 
   /// The internal wrapped value.
@@ -67,8 +70,8 @@ sealed class ImType<T extends Object> {
 /// Use [ImNum] to safely transfer a numeric value between isolates.
 /// It also provides helper methods for converting the value.
 class ImNum extends ImType<num> {
-  /// Creates an [ImNum] with the given numeric [value].
-  const ImNum(super.value);
+  /// Creates an [ImNum] with the given numeric [_value].
+  const ImNum(super._value);
 
   /// Returns the numeric value as a [double].
   double toDouble() => _value.toDouble();
@@ -85,8 +88,8 @@ class ImNum extends ImType<num> {
 /// Use [ImString] to safely transfer strings between isolates.
 
 class ImString extends ImType<String> {
-  /// Creates an [ImString] with the given string [value].
-  const ImString(super.value);
+  /// Creates an [ImString] with the given string [_value].
+  const ImString(super._value);
 
   @override
   String toString() => 'ImString($_value)';
@@ -96,9 +99,9 @@ class ImString extends ImType<String> {
 ///
 /// Use [ImBool] when transferring boolean values between isolates.
 class ImBool extends ImType<bool> {
-  /// Creates an [ImBool] with the given boolean [value].
+  /// Creates an [ImBool] with the given boolean [_value].
   // ignore: avoid_positional_boolean_parameters
-  const ImBool(super.value);
+  const ImBool(super._value);
 
   @override
   String toString() => 'ImBool($_value)';
@@ -110,7 +113,7 @@ class ImBool extends ImType<bool> {
 /// of original Dart values.
 class ImList extends _ImTypedIterable<Object> {
   /// Creates an [ImList] with the provided list of wrapped objects.
-  const ImList(super.list);
+  const ImList(super._list);
 
   /// Converts a plain Dart object into its corresponding [ImList] instance.
   ///
@@ -178,7 +181,7 @@ class ImList extends _ImTypedIterable<Object> {
 /// Use [ImMap] to safely transfer maps between isolates.
 class ImMap extends _ImTypedMap<Object, Object> {
   /// Creates an [ImMap] with the provided map of wrapped objects.
-  const ImMap(super.map);
+  const ImMap(super._map);
 
   /// Converts a plain Dart object into its corresponding [ImMap] instance.
   ///
@@ -186,9 +189,7 @@ class ImMap extends _ImTypedMap<Object, Object> {
   ///   [num], [String], [bool], [List], and [Map] that contain these types.
   ///
   /// Throws an [UnsupportedImTypeException] if the object's type is not supported.
-  static ImMap wrap<K extends Object?, V extends Object?>(
-    Map<K, V> object,
-  ) {
+  static ImMap wrap<K extends Object?, V extends Object?>(Map<K, V> object) {
     return ImType.wrap<ImMap>(object);
   }
 

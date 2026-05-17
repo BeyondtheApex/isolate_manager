@@ -1,3 +1,74 @@
+## 6.3.2
+
+* Add `debugName` parameter for improved debugging in IsolateManager.
+
+## 6.3.1
+
+* Fix the docs to clarify WASM transferables (`enableWasmTransferables` parameter) behavior in README.
+
+## 6.3.0
+
+* Documented support for using `--` to pass arguments to the Dart compiler.
+* Update the workflows to compatible with `isolate_manager_generator` `^0.4.0`.
+* Bump the dart analyzer to `^10.2.0`.
+* Note for `isolate_manager_generator` `^0.4.0`:
+  * BREAKING CHANGE: Removed `--omit-implicit-checks` option.
+      Before (the option is added automatically):
+
+      ```dart
+      dart run isolate_manager_generator
+      ```
+
+      After (the option is added manually):
+
+      ```dart
+      dart run isolate_manager_generator -- --omit-implicit-checks
+      ```
+
+  * BREAKING CHANGE: Removed unused source map generation and cleanup logic.
+      Before (the option is added automatically):
+
+      ```dart
+      dart run isolate_manager_generator
+      ```
+
+      After (the option is added manually):
+
+      ```dart
+      dart run isolate_manager_generator -- --no-source-maps
+      ```
+
+  * BREAKING CHANGE: The `js.deps` files are no longer removed automatically, and there is no helper available for this change.
+  * Bump the dart analyzer to `^10.0.0`.
+
+## 6.2.0
+
+* Add cross-platform transferables support (fixes [#56](https://github.com/lamnhan066/isolate_manager/issues/56), thanks to @kartikey321).
+* Add `enableWasmTransferables` parameter to automatically omit transferables on WASM targets for better performance.
+* Update `queueStrategy` and `workerConverter` types for better null safety (fixes [#54](https://github.com/lamnhan066/isolate_manager/issues/54)).
+* Improve benchmark scripts.
+* Update README.
+
+## 6.1.2
+
+* Improve the way to check if the isolate_manager_generator is installed.
+
+## 6.1.1
+
+* Hide the `IsolateManagerCustomWorker` class.
+* Strip --add-generator flag before launching generator.
+
+## 6.1.0
+
+* Hide the `IsolateManagerController.initialParams` to avoid unexpected access. Because this attribute does nothing so I won't treat it as a breaking change.
+* Update the docs that related to deprecated `onInitial`.
+
+## 6.0.1
+
+* Update `IsolateManager` docs for `runFunction` and `runCustomFunction`.
+* Add `enableWasmConverter` parameter to `IsolateManager`.
+* Update README.
+
 ## 6.0.0+1, +2
 
 * Improve README.

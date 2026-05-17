@@ -36,7 +36,6 @@ dependency_overrides:
     path: ../
 
 dev_dependencies:
-  isolate_manager_generator: ^0.0.12
   flutter_test:
     sdk: flutter
 
